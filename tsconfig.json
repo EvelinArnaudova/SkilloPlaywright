@@ -12,7 +12,7 @@
     "skipLibCheck": true,             // Skips type checking of .d.ts files in node_modules (speeds up build and prevents third-party library type errors)
     "isolatedModules": true,          // Ensures each file can be transpiled independently by modern build tools
     "moduleDetection": "force",       // Treats all files as ES modules even if they don't have explicit import/export statements
-    "noUncheckedIndexedAccess": true  // Adds 'undefined' to array lookups or index signatures for safer element access
+    "noUncheckedIndexedAccess": true,  // Adds 'undefined' to array lookups or index signatures for safer element access
 
     /* Path Aliases (Optional) */
     // "baseUrl": ".",                // Base directory to resolve non-relative module names
