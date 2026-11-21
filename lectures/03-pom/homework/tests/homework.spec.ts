@@ -55,7 +55,7 @@ test.describe('Northwind Supply partner portal', () => {
 		await expect(ordersPage.descendingTotalFilter).toBeVisible();
 	});
 
-	test('updates the phone number on the account page and shows it in the summary', async ({ page }) => {
+	test('updates the phone number on the account page and shows it in the summary', async () => {
 
 		await loginPage.login('alex.morgan@example.test', 'Northwind#2026');
 		await accountPage.navigateToAccountPage();
@@ -63,7 +63,13 @@ test.describe('Northwind Supply partner portal', () => {
 		await expect(accountPage.successAlert).toHaveText('Your details have been saved.');
 	});
 
-	test.fixme('signs out and redirects to sign in when the orders page is opened again', async () => {
-
+	test('signs out and redirects to sign in when the orders page is opened again', async ({ page }) => {
+		await loginPage.login('alex.morgan@example.test', 'Northwind#2026');
+		await expect(page).toHaveURL(/index.html/);
+		await ordersPage.signOut();
+		await expect(page).toHaveURL(/login.html/);
+		await ordersPage.navigateToOrdersPage();
+		await expect(page).toHaveURL(/login.html/);
+		await expect(loginPage.signInButton).toBeVisible();
 	});
 });

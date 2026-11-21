@@ -18,6 +18,7 @@ export class OrdersPage {
 	readonly resultsCount: Locator;
     readonly ordersTotalFilter: Locator;
     readonly descendingTotalFilter: Locator;
+	readonly signOutButton: Locator;
 
 	constructor(private readonly page: Page) {
 		this.ordersTableRows = page.locator('#orders-table tbody tr');
@@ -26,6 +27,13 @@ export class OrdersPage {
 		this.resultsCount = page.getByRole('status');
 		this.ordersTotalFilter = page.getByRole('button', { name: 'Total' });
 		this.descendingTotalFilter = page.locator('th[aria-sort="descending"]');
+		this.signOutButton = page.getByRole('button', { name: 'Sign out', exact: true });
+	}
+
+	async navigateToOrdersPage(): Promise<void> {
+		const ordersPageUrl = pathToFileURL(resolve(__dirname, '../pages/index.html')).href;
+		// An unauthenticated visit is redirected right away, so don't wait for the load event
+		await this.page.goto(ordersPageUrl, { waitUntil: 'commit' });
 	}
 
     async sortByTotal(): Promise<void> {
@@ -67,6 +75,10 @@ export class OrdersPage {
 
 	async getOrderIds(): Promise<string[]> {
 		return (await this.getOrders()).map((order) => order.id);
+	}
+
+	async signOut(): Promise<void> {
+		await this.signOutButton.click();
 	}
 }
 
