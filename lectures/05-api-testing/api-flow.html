@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<!-- TESTING: Animated walkthrough of how the Lecture 5 API and UI tests run, step by step. -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Test Flow: how Playwright runs the Lecture 5 API tests</title>
+<!--
+	Interactive teaching aid for Lecture 5 (05-api-testing).
+	Open this file directly in a browser; it needs no server and no internet.
+	Code snippets are copied from the real files, with their real line numbers.
+-->
+<style>
+	:root {
+		--bg: #0f172a; --panel: #111c33; --panel-2: #16233f; --line: #3b5683; --text: #f8fafc; --muted: #cbd5e1; --dim: #a5b4cf;
+		--test: #60a5fa; --builtin: #94a3b8; --factory: #a78bfa; --object: #34d399; --closure: #fbbf24; --data: #2dd4bf; --pom: #f472b6; --error: #f87171;
+		--call: #fb923c; --creates: #fbbf24; --returns: #34d399; --uses: #fde68a; --browser: #60a5fa; --arg: #2dd4bf;
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+	header { padding: 18px 24px 8px; }
+	h1 { margin: 0 0 4px; font-size: 26px; }
+	h1 small { color: var(--muted); font-weight: 400; font-size: 16px; }
+	.rules { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+	.rules li { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px; font-size: 15px; color: var(--muted); }
+	.rules b { color: var(--text); }
+	code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; color: #fde68a; background: #0b1224; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+	/* ---------- Intro panel: "What is a factory function?" ---------- */
+	.intro { margin: 12px 24px 4px; background: var(--panel); border: 1px solid var(--accent); border-radius: 14px; }
+	.intro summary { list-style: none; cursor: pointer; padding: 12px 16px; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+	.intro summary::-webkit-details-marker { display: none; }
+	.intro summary::before { content: '▶'; color: var(--accent); font-size: 14px; transition: transform 0.2s; }
+	.intro[open] summary::before { transform: rotate(90deg); }
+	.intro summary small { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: auto; }
+	.intro summary:focus-visible { outline: 2px solid var(--accent); border-radius: 14px; }
+	.intro-body { padding: 0 16px 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; animation: fade 0.3s ease; }
+	@media (max-width: 900px) { .intro-body { grid-template-columns: 1fr; } }
+	.intro-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+	.intro-card h3 { margin: 0 0 8px; font-size: 17px; color: var(--accent); }
+	.intro-card p { margin: 0 0 8px; font-size: 16px; }
+	.intro-card ul { margin: 0; padding-left: 20px; font-size: 16px; }
+	.intro-card li { margin: 3px 0; }
+	.intro-card pre { margin: 6px 0 8px; background: #070d1c; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: 14.5px/1.6 ui-monospace, Menlo, monospace; color: #f1f5f9; overflow-x: auto; }
+	.intro-card pre .c { color: #a5b4cf; font-style: italic; }
+	.intro-card pre .k { color: #d8b4fe; }
+	.intro-card pre .s { color: #86efac; }
+	.intro-card pre .u { color: #fde68a; font-weight: 700; }
+	.intro-card pre .e { color: #fca5a5; font-weight: 700; }
+	.intro-card.wide { grid-column: 1 / -1; }
+	.intro table { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+	.intro th, .intro td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+	.intro th { color: var(--muted); font-weight: 600; }
+	.intro .no h3 { color: var(--closure); }
+
+	/* ---------- Toolbar ---------- */
+	.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 24px; position: sticky; top: 0; z-index: 5; background: rgba(15, 23, 42, 0.95); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); }
+	.flows { display: flex; gap: 6px; flex-wrap: wrap; }
+	.flow-btn { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 7px 14px; font-size: 15px; cursor: pointer; text-align: left; }
+	.flow-btn small { display: block; color: var(--muted); font-size: 13px; }
+	.flow-btn.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; background: var(--panel-2); }
+	.controls { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+	.controls button, .controls select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; height: 38px; min-width: 42px; cursor: pointer; font-size: 16px; }
+	.controls button.primary { background: var(--accent-btn); border-color: var(--accent-btn); min-width: 100px; }
+	.counter { color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; }
+
+	.progress { display: flex; gap: 3px; padding: 8px 24px 0; }
+	.progress div { flex: 1; height: 8px; border-radius: 4px; opacity: 0.4; cursor: pointer; transition: opacity 0.2s, transform 0.2s; }
+	.progress div.past { opacity: 0.65; }
+	.progress div.current { opacity: 1; transform: scaleY(1.6); }
+
+	main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(420px, 1fr); gap: 16px; padding: 14px 24px 24px; align-items: start; }
+	.graph-card { position: sticky; top: 70px; }
+	.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+	.card h2 { margin: 0 0 10px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+	.side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+	/* ---------- Graph ---------- */
+	svg { width: 100%; height: auto; display: block; }
+	.edge { fill: none; stroke: var(--line); stroke-width: 2; opacity: 0.4; transition: stroke 0.3s, opacity 0.3s; }
+	.edge.in-flow { opacity: 1; stroke: #6b86b8; stroke-width: 2.5; }
+	.edge.creates { stroke-dasharray: 2 5; }
+	.edge.uses { stroke-dasharray: 6 5; }
+	.anim { fill: none; stroke-width: 4; stroke-linecap: round; filter: drop-shadow(0 0 6px currentColor); }
+	.anim.call { stroke: var(--call); color: var(--call); }
+	.anim.creates { stroke: var(--creates); color: var(--creates); }
+	.anim.returns { stroke: var(--returns); color: var(--returns); }
+	.anim.uses { stroke: var(--uses); color: var(--uses); }
+	.anim.browser { stroke: var(--browser); color: var(--browser); }
+	.anim.arg { stroke: var(--arg); color: var(--arg); }
+	.dot { filter: drop-shadow(0 0 8px currentColor); }
+
+	.node rect { fill: #0b1224; stroke: var(--k); stroke-width: 2; transition: fill 0.3s, opacity 0.3s, stroke-width 0.3s; }
+	.node { --k: var(--builtin); transition: opacity 0.35s; }
+	.node .title { fill: var(--text); font: 700 16px ui-monospace, Menlo, monospace; text-anchor: middle; }
+	.node .sub { fill: var(--muted); font-size: 13px; text-anchor: middle; }
+	.node .status { font-size: 13.5px; font-weight: 700; text-anchor: middle; fill: var(--muted); }
+	.node .badge { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-anchor: middle; fill: var(--k); }
+	.k-test { --k: var(--test); } .k-builtin { --k: var(--builtin); } .k-factory { --k: var(--factory); }
+	.k-object { --k: var(--object); } .k-closure { --k: var(--closure); } .k-data { --k: var(--data); }
+
+	.s-idle { opacity: 0.55; }
+	.s-unused { opacity: 0.28; }
+	.s-running rect, .s-used rect, .s-busy rect { fill: color-mix(in srgb, var(--k) 30%, #0b1224); stroke-width: 3; animation: pulse 1s ease-in-out infinite; }
+	.s-running .status, .s-used .status, .s-busy .status, .s-alive .status { fill: var(--k); }
+	.s-alive rect { fill: color-mix(in srgb, var(--k) 16%, #0b1224); }
+	.s-finished { opacity: 0.7; }
+	.s-finished rect { stroke-dasharray: 5 4; }
+	.s-error rect { stroke: var(--error); fill: color-mix(in srgb, var(--error) 25%, #0b1224); stroke-width: 3; }
+	.s-error .status { fill: var(--error); }
+	.s-done rect { stroke: #22c55e; fill: color-mix(in srgb, #22c55e 18%, #0b1224); }
+	.s-done .status { fill: #22c55e; }
+	@keyframes pulse { 0%, 100% { filter: drop-shadow(0 0 2px var(--k)); } 50% { filter: drop-shadow(0 0 14px var(--k)); } }
+
+	.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; font-size: 15px; color: var(--muted); }
+	.legend span { display: inline-flex; align-items: center; gap: 6px; }
+	.sw { width: 12px; height: 12px; border-radius: 3px; border: 2px solid; display: inline-block; }
+	.ln { width: 22px; height: 0; border-top: 3px solid; display: inline-block; }
+
+	/* ---------- Narration ---------- */
+	.phase { display: inline-block; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 10px; border-radius: 999px; color: #0b1224; }
+	.now h3 { margin: 10px 0 8px; font-size: 20px; }
+	.now p { margin: 0; color: var(--text); font-size: 17px; line-height: 1.6; }
+	.now .text { animation: fade 0.35s ease; }
+	@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+	/* ---------- Code ---------- */
+	.file { font: 14px ui-monospace, Menlo, monospace; color: var(--muted); margin-bottom: 6px; }
+	.file b { color: var(--text); }
+	pre.code { position: relative; max-height: 360px; overflow: auto; margin: 0; background: #070d1c; border: 1px solid var(--line); border-radius: 10px; padding: 8px 0; font: 14.5px/1.65 ui-monospace, Menlo, monospace; color: #f1f5f9; }
+	.code .l { display: block; padding: 0 12px 0 0; white-space: pre; border-left: 3px solid transparent; transition: background 0.3s; }
+	.code .l .n { display: inline-block; width: 42px; text-align: right; padding-right: 12px; color: var(--dim); user-select: none; }
+	.code .l.hl { background: var(--accent-hl); border-left-color: var(--accent); }
+	.code .l.hl .n { color: var(--text); font-weight: 700; }
+	.code .l.err { background: rgba(248, 113, 113, 0.28); border-left-color: var(--error); }
+	.tok-k { color: #d8b4fe; } .tok-s { color: #86efac; } .tok-c { color: #a5b4cf; font-style: italic; }
+
+	/* ---------- Closure memory ---------- */
+	.memory { display: flex; flex-direction: column; gap: 10px; }
+	.scope { border: 1px solid var(--k); border-radius: 10px; background: color-mix(in srgb, var(--k) 9%, #0b1224); padding: 8px 12px; animation: slide-in 0.4s ease; }
+	.scope.kept { animation: none; }
+	.scope-h { font: 700 15px ui-monospace, Menlo, monospace; color: var(--text); }
+	.scope-h small { font: 400 13px system-ui, sans-serif; color: var(--muted); margin-left: 6px; }
+	.vars { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0; font-size: 14.5px; }
+	.vars .v { font-family: ui-monospace, Menlo, monospace; color: #fde68a; padding: 0 4px; border-radius: 4px; transition: background 0.3s; }
+	.vars .d { color: var(--muted); }
+	.vars .hl { background: rgba(251, 191, 36, 0.35); color: #fff; }
+	.vars .d.hl { background: none; color: var(--text); font-weight: 600; }
+	.vars .ovr { color: var(--data); font-weight: 700; }
+	.pub { font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+	.pill { font: 13.5px ui-monospace, Menlo, monospace; color: #0b1224; background: var(--object); border-radius: 999px; padding: 0 8px; transition: box-shadow 0.3s; }
+	.pill.hl { box-shadow: 0 0 0 2px #fff, 0 0 12px var(--object); }
+	.empty { color: var(--dim); font-size: 14px; font-style: italic; }
+	@keyframes slide-in { from { opacity: 0; transform: translateY(-10px) scale(0.96); } to { opacity: 1; transform: none; } }
+
+	/* ---------- Timeline ---------- */
+	ol.timeline { margin: 0; padding: 0; list-style: none; max-height: 320px; overflow-y: auto; }
+	ol.timeline li { display: flex; gap: 8px; align-items: baseline; padding: 5px 10px; border-radius: 6px; cursor: pointer; color: var(--dim); font-size: 15px; }
+	ol.timeline li:hover { background: var(--panel-2); }
+	ol.timeline li.current { background: var(--accent-deep); color: #fff; font-weight: 700; }
+	ol.timeline li.past { color: var(--text); }
+	ol.timeline .pd { width: 11px; height: 11px; border-radius: 50%; flex: none; transform: translateY(1px); }
+	ol.timeline .num { color: var(--dim); font-variant-numeric: tabular-nums; min-width: 18px; }
+
+	footer { padding: 0 24px 28px; color: var(--muted); font-size: 15px; line-height: 1.7; }
+	footer a { color: var(--test); }
+	footer nav { margin-top: 6px; }
+	footer nav a.here { color: var(--text); font-weight: 700; text-decoration: none; }
+	@media (max-width: 1100px) { main { grid-template-columns: 1fr; } .graph-card { position: static; } }
+
+	.edge.needs { stroke-dasharray: 8 4; }
+	.edge.request { stroke-dasharray: 3 4; }
+	.anim.needs { stroke: var(--needs); color: var(--needs); }
+	.anim.request { stroke: var(--request); color: var(--request); }
+	.anim.error { stroke: var(--error); color: var(--error); }
+
+	:root { --accent: #38bdf8; --accent-hl: rgba(56, 189, 248, 0.28); --accent-btn: #0369a1; --accent-deep: #0c4a6e; --needs: #e879f9; --request: #7dd3fc; }
+	.k-fixture { --k: var(--factory); } .k-client { --k: var(--object); } .k-config { --k: var(--closure); }
+	.k-file { --k: #fdba74; } .k-pom { --k: var(--pom); } .k-server { --k: var(--data); }
+	.k-ok { --k: #22c55e; } .k-error { --k: var(--error); }
+
+	/* ---------- API reference panel (Swagger-like) ---------- */
+	.api-docs { border-color: var(--data); }
+	.api-docs > summary::before { color: var(--data); }
+	.api-docs .intro-card h3 { color: var(--data); }
+	.api-docs .docs-body { padding: 0 16px 16px; animation: fade 0.3s ease; }
+	.docs-top { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+	@media (max-width: 1100px) { .docs-top { grid-template-columns: 1fr; } .docs-top > .intro-card { grid-column: 1 / -1; } }
+	.docs-tools { display: flex; gap: 8px; align-items: center; margin: 4px 0 10px; color: var(--muted); font-size: 15px; }
+	.docs-tools button { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; font-size: 14px; cursor: pointer; }
+	.docs-top > .intro-card { grid-column: span 2; } .docs-top > .half { grid-column: span 3; } .docs-top > .full { grid-column: 1 / -1; }
+	.tag-h { margin: 16px 0 8px; font-size: 18px; color: var(--text); border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+	details.ep { --m: var(--builtin); border: 1px solid color-mix(in srgb, var(--m) 70%, transparent); background: color-mix(in srgb, var(--m) 8%, #0b1224); border-radius: 10px; margin: 6px 0; }
+	details.ep > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 12px 84px minmax(220px, max-content) 1fr auto; gap: 14px; align-items: center; padding: 8px 12px; font-size: 16px; font-weight: 400; }
+	details.ep > summary::before { content: '▶'; color: var(--m); font-size: 12px; transform: none; transition: transform 0.2s; }
+	.api-docs details.ep:not([open]) > summary::before { transform: none; }
+	.api-docs details.ep[open] > summary::before { transform: rotate(90deg); }
+	details.ep > summary::-webkit-details-marker { display: none; }
+	details.ep > summary:focus-visible { outline: 2px solid var(--m); border-radius: 10px; }
+	details.ep.m-GET { --m: #60a5fa; } details.ep.m-POST { --m: #34d399; } details.ep.m-PUT { --m: #fb923c; } details.ep.m-PATCH { --m: #2dd4bf; } details.ep.m-DELETE { --m: #f87171; }
+	.method { background: var(--m); color: #0b1224; font: 800 14px ui-monospace, Menlo, monospace; text-align: center; border-radius: 6px; padding: 4px 0; }
+	.ep-path { font: 700 16px ui-monospace, Menlo, monospace; color: var(--text); }
+	.ep-sum { color: var(--muted); font-size: 15.5px; }
+	.access { font-size: 13px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; color: var(--muted); white-space: nowrap; }
+	.access.auth, .access.author { color: #fde68a; border-color: #a16207; }
+	.ep-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; padding: 4px 14px 14px; border-top: 1px solid color-mix(in srgb, var(--m) 40%, transparent); animation: fade 0.25s ease; }
+	@media (max-width: 1100px) { .ep-body { grid-template-columns: 1fr; } }
+	.ep-body h4 { margin: 10px 0 6px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+	.ep-body p { margin: 8px 0 0; font-size: 15.5px; }
+	.ep-body pre { margin: 0 0 6px; background: #070d1c; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: 14px/1.5 ui-monospace, Menlo, monospace; color: #f1f5f9; overflow-x: auto; }
+	.api-docs table { width: 100%; border-collapse: collapse; font-size: 15px; }
+	.api-docs th, .api-docs td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+	.api-docs th { color: var(--muted); font-weight: 600; }
+	.resp { border-left: 3px solid var(--line); padding: 2px 0 2px 10px; margin: 6px 0; }
+	.resp .code { font: 800 14px ui-monospace, Menlo, monospace; border-radius: 6px; padding: 1px 8px; margin-right: 8px; }
+	.resp.ok { border-color: #22c55e; } .resp.ok .code { background: #22c55e; color: #0b1224; }
+	.resp.bad { border-color: var(--error); } .resp.bad .code { background: var(--error); color: #0b1224; }
+	.resp .rd { font-size: 15px; color: var(--text); }
+	.resp pre { margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+	<h1>API Test Flow <small>how Playwright starts the server, signs in through the API, sends requests and cleans up</small></h1>
+	<ul class="rules">
+		<li><b>1.</b> <code>webServer</code> starts the API <b>before</b> any test</li>
+		<li><b>2.</b> <code>request</code> sends real HTTP: <b>no browser</b></li>
+		<li><b>3.</b> <b>Fixtures</b> log in, build API clients and <b>clean up</b></li>
+		<li><b>4.</b> UI tests reuse an <b>API login</b> through <code>storageState</code></li>
+	</ul>
+</header>
+
+<!-- Collapsible theory panel. Closed by default so the animation stays on screen; toggle with a click or the "I" key. -->
+<details class="intro" id="intro">
+	<summary>What is API testing? The basics in 2 minutes <small>click or press <code>I</code> to show / hide</small></summary>
+	<div class="intro-body">
+		<div class="intro-card">
+			<h3>1. The idea in one sentence</h3>
+			<p>An <b>API test</b> talks to the server directly over HTTP: it sends a request and checks the <b>status</b>, <b>headers</b> and <b>JSON body</b>. There is no browser and no HTML.</p>
+			<p>Analogy: instead of ordering in the restaurant (UI), you call the kitchen (API) directly.</p>
+		</div>
+
+		<div class="intro-card">
+			<h3>2. Anatomy of an API test</h3>
+<pre><span class="k">test</span>(<span class="s">'GET posts'</span>, <span class="k">async</span> ({ <span class="u">request</span> }) => {
+  <span class="k">const</span> res = <span class="k">await</span> <span class="u">request</span>.get(<span class="s">'/api/posts'</span>);
+  <span class="k">expect</span>(res.status()).toBe(200);   <span class="c">// 1. status</span>
+  <span class="k">const</span> posts = <span class="k">await</span> res.json();   <span class="c">// 2. body</span>
+  <span class="k">expect</span>(posts.length).toBeGreaterThan(0);
+});</pre>
+		</div>
+
+		<div class="intro-card wide">
+			<h3>3. Status codes used in this lecture</h3>
+			<table>
+				<tr><th>Code</th><th>Meaning</th><th>Example here</th></tr>
+				<tr><td><code>200</code> OK</td><td>success, with a body</td><td><code>GET /api/posts</code>, PATCH, PUT</td></tr>
+				<tr><td><code>201</code> Created</td><td>a new resource was made (plus a <code>Location</code> header)</td><td><code>POST /api/posts</code></td></tr>
+				<tr><td><code>204</code> No Content</td><td>success, empty body</td><td><code>DELETE /api/posts/4</code></td></tr>
+				<tr><td><code>400</code> Bad Request</td><td>the body is invalid</td><td>empty title, partial PUT</td></tr>
+				<tr><td><code>401</code> Unauthorized</td><td>"I don't know who you are"</td><td>no token, wrong password</td></tr>
+				<tr><td><code>403</code> Forbidden</td><td>"I know you, but you may not do this"</td><td>QA deletes the admin's post</td></tr>
+				<tr><td><code>404</code> Not Found</td><td>no such resource</td><td><code>GET /api/posts/999</code></td></tr>
+			</table>
+		</div>
+
+		<div class="intro-card wide">
+			<h3>4. request vs page</h3>
+			<table>
+				<tr><th></th><th><code>request</code> (APIRequestContext)</th><th><code>page</code> (browser tab)</th></tr>
+				<tr><td>Talks to</td><td>the API: JSON over HTTP</td><td>the web page: HTML, clicks, typing</td></tr>
+				<tr><td>Starts a browser?</td><td><b>no</b>: milliseconds</td><td>yes: seconds</td></tr>
+				<tr><td>Signed in by</td><td>a token header or a cookie</td><td>a cookie (<code>storageState</code>)</td></tr>
+				<tr><td>Best for</td><td>business rules, status codes, test data setup and cleanup</td><td>what the user sees and does</td></tr>
+			</table>
+		</div>
+
+		<div class="intro-card wide">
+			<h3>5. What <code>APIRequestContext</code> gives you</h3>
+			<p><code>APIRequestContext</code> is Playwright's <b>HTTP client</b>. It runs in Node.js, not in a browser, so there is no page, no JavaScript and no CORS. Think of it as a scriptable Postman with a memory for cookies.</p>
+			<table>
+				<tr><th>Capability</th><th>How</th><th>Used in this lecture</th></tr>
+				<tr><td><b>Send any HTTP method</b></td><td><code>get</code> <code>post</code> <code>put</code> <code>patch</code> <code>delete</code> <code>head</code>, or <code>fetch(url, { method })</code></td><td>every client method in <code>PostsApiClient</code></td></tr>
+				<tr><td><b>Short URLs</b></td><td><code>baseURL</code> from the config: <code>request.get('/api/posts')</code></td><td><code>use.baseURL = http://localhost:3001</code></td></tr>
+				<tr><td><b>Query string</b></td><td><code>params: { published: true, _limit: 2 }</code>, encoded for you</td><td><code>postsApi.list(...)</code></td></tr>
+				<tr><td><b>Request body</b></td><td><code>data</code> = JSON (sets <code>Content-Type</code>), <code>form</code> = URL-encoded form, <code>multipart</code> = file upload</td><td><code>data</code> for login and posts</td></tr>
+				<tr><td><b>Headers</b></td><td>per call: <code>headers</code>; for every call: <code>extraHTTPHeaders</code></td><td><code>Authorization: Bearer</code> in <code>authedRequest</code></td></tr>
+				<tr><td><b>Cookie jar</b></td><td>keeps <code>Set-Cookie</code> from responses and sends it on the next calls</td><td>login sets the <code>session</code> cookie</td></tr>
+				<tr><td><b>Save the session</b></td><td><code>request.storageState({ path })</code> writes the cookies to a file a browser can load</td><td><code>auth.setup.ts</code> → <code>.auth/qa.json</code></td></tr>
+				<tr><td><b>Control each call</b></td><td><code>timeout</code>, <code>failOnStatusCode</code> (throw on 4xx/5xx), <code>maxRedirects</code>, <code>maxRetries</code> (network errors only), <code>ignoreHTTPSErrors</code></td><td>defaults: we assert the status ourselves</td></tr>
+				<tr><td><b>Read the response</b></td><td><code>APIResponse</code>: <code>status()</code> <code>ok()</code> <code>headers()</code> <code>json()</code> <code>text()</code> <code>body()</code>, plus <code>expect(res).toBeOK()</code></td><td>every assertion in <code>api-tests/</code></td></tr>
+				<tr><td><b>Visible in reports</b></td><td>each call is a step in the HTML report and the trace</td><td><code>npx playwright show-report</code></td></tr>
+			</table>
+			<p style="margin-top:10px"><b>Three ways to get one:</b></p>
+			<ul>
+				<li><code>{ request }</code>: the <b>built-in fixture</b>. Uses config options such as <code>baseURL</code> and <code>extraHTTPHeaders</code>; a fresh one per test, closed for you.</li>
+				<li><code>playwright.request.newContext({ ... })</code>: <b>your own</b> context with its own settings (our <code>authedRequest</code> fixture). You must call <code>dispose()</code>.</li>
+				<li><code>page.request</code>: <b>shares cookies with the browser</b>. Log in here and the page is signed in too.</li>
+			</ul>
+<pre><span class="k">const</span> res = <span class="k">await</span> <span class="u">request</span>.post(<span class="s">'/api/posts'</span>, {
+  data: { title: <span class="s">'Hello'</span> },                  <span class="c">// JSON body</span>
+  headers: { Authorization: <span class="s">`Bearer ${token}`</span> },
+});
+<span class="k">expect</span>(res.status()).toBe(201);
+<span class="k">expect</span>(res.headers()[<span class="s">'location'</span>]).toMatch(<span class="s">/\/api\/posts\/\d+/</span>);
+<span class="k">const</span> post = <span class="k">await</span> res.json();</pre>
+		</div>
+
+		<div class="intro-card">
+			<h3>6. Why fixtures for API tests?</h3>
+			<ul>
+				<li><b>Login once per test, out of sight:</b> <code>apiToken</code> + <code>authedRequest</code>.</li>
+				<li><b>Clients instead of URLs:</b> <code>postsApi.create(...)</code>, like a page object for the backend.</li>
+				<li><b>Automatic cleanup:</b> <code>posts</code> deletes what the test created, even after a failure.</li>
+				<li><b>Same fixtures in UI tests:</b> seed data through the API, check it in the browser.</li>
+			</ul>
+		</div>
+
+		<div class="intro-card">
+			<h3>7. The order of a full run</h3>
+			<ul>
+				<li><b>webServer</b> (in the config, nothing else needed): reuse a running server, or run <code>node server/server.mjs</code> and wait until <code>/api/health</code> answers.</li>
+				<li><b>api</b> project: <code>api-tests/*.spec.ts</code>, no browser.</li>
+				<li><b>setup</b> project: <code>auth.setup.ts</code> logs in and writes <code>.auth/qa.json</code>.</li>
+				<li><b>ui-chrome</b> / <b>ui-firefox</b>: wait for setup, then load the saved session.</li>
+				<li><b>After all projects:</b> the runner stops the server it started.</li>
+			</ul>
+		</div>
+
+		<div class="intro-card">
+			<h3>8. Postman: explore the same API by hand</h3>
+			<ul>
+				<li><b>Not a Playwright feature:</b> Playwright does not export or import Postman collections. <code>postman/Lecture5-TeamBlog.postman_collection.json</code> is a plain JSON file (Postman Collection v2.1) written for this lecture.</li>
+				<li><b>In Postman:</b> Import → choose the file. Steps: <code>POSTMAN.md</code>.</li>
+				<li><b>From the terminal:</b> <code>npx newman run lectures/05-api-testing/postman/Lecture5-TeamBlog.postman_collection.json</code> (Newman is Postman's CLI runner).</li>
+				<li><b>Start the server first</b> (<code>npm run start:api</code>): <code>webServer</code> only works for <code>playwright test</code>.</li>
+			</ul>
+			<p style="margin-top:8px"><b>Postman</b> = explore and try by hand. <b>Playwright</b> = automated tests in the repo, with fixtures, cleanup and CI.</p>
+		</div>
+
+		<div class="intro-card no">
+			<h3>9. Watch out for</h3>
+			<ul>
+				<li><b>Only checking the status:</b> a 200 with the wrong body is still a bug.</li>
+				<li><b>Leftover data:</b> every created record needs cleanup, or the next run is different.</li>
+				<li><b>Hard-coded ids</b> of data you created: read them from the response.</li>
+				<li><b>Logging in with the built-in <code>request</code></b> when other calls in the test must stay anonymous: it keeps the cookie.</li>
+			</ul>
+			<p style="margin-top:8px">Rule of thumb: <b>set up through the API, check what matters where it matters.</b></p>
+		</div>
+	</div>
+</details>
+
+<!-- Collapsible API reference (Swagger-like). Toggle with a click or the "A" key. -->
+<details class="intro api-docs" id="apidocs">
+	<summary>API reference: every endpoint of the Team Blog API <small>click or press <code>A</code> to show / hide</small></summary>
+	<div class="docs-body">
+		<div class="docs-top">
+			<div class="intro-card">
+				<h3>Base URL and format</h3>
+				<ul>
+					<li><code>http://localhost:3001</code>: start it with <code>npm run start:api</code> (tests start it via <code>webServer</code>).</li>
+					<li>Requests and responses are <b>JSON</b>. Send <code>Content-Type: application/json</code> with a body.</li>
+					<li>Data is <b>in memory</b>: restarting the server resets it to the seed data.</li>
+				</ul>
+			</div>
+			<div class="intro-card">
+				<h3>Authentication</h3>
+				<ul>
+					<li><code>POST /api/login</code> returns a <code>token</code> and sets a <code>session</code> cookie.</li>
+					<li><b>API clients:</b> <code>Authorization: Bearer &lt;token&gt;</code></li>
+					<li><b>Browsers:</b> the cookie is sent automatically.</li>
+					<li>🔒 <b>auth</b> = any signed-in user · 🔒 <b>author</b> = the post's author or an admin.</li>
+				</ul>
+			</div>
+			<div class="intro-card">
+				<h3>Test accounts and seed data</h3>
+				<table>
+					<tr><th>id</th><th>email / password</th><th>role</th></tr>
+					<tr><td>1</td><td><code>admin@example.com</code> / <code>admin123</code></td><td>admin</td></tr>
+					<tr><td>2</td><td><code>dev@example.com</code> / <code>secret123</code></td><td>qa</td></tr>
+				</table>
+				<p style="margin-top:6px">Posts 1 and 2 belong to the admin (2 is a draft), post 3 to QA. New posts get ids from 4.</p>
+			</div>
+			<div class="intro-card half">
+				<h3>Schemas</h3>
+<pre><span class="k">User</span>     { id: number; name: string; email: string;
+           role: <span class="s">'admin'</span> | <span class="s">'qa'</span> }
+<span class="k">Post</span>     { id: number; title: string; body: string;
+           published: boolean; authorId: number }
+<span class="k">ApiError</span> { error: string; details?: string[] }</pre>
+				<p>Same types in <code>api/types.ts</code>.</p>
+			</div>
+			<div class="intro-card half">
+				<h3>Errors: the server checks in this order</h3>
+				<table>
+					<tr><td><code>401</code></td><td>who are you? (no or unknown token)</td></tr>
+					<tr><td><code>404</code></td><td>does it exist? (also any unknown route)</td></tr>
+					<tr><td><code>403</code></td><td>may you change it?</td></tr>
+					<tr><td><code>400</code></td><td>is the body valid? (<code>details</code> lists every problem)</td></tr>
+				</table>
+			</div>
+			<div class="intro-card full">
+				<h3>Get a token in the terminal</h3>
+<pre>TOKEN=$(curl -s -X POST http://localhost:3001/api/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"dev@example.com","password":"secret123"}' \
+  | node -pe 'JSON.parse(require("fs").readFileSync(0)).token')
+echo $TOKEN</pre>
+				<p>The curl examples below use <code>$TOKEN</code>. In Postman, the collection does this for you.</p>
+			</div>
+		</div>
+		<div class="docs-tools">12 endpoints. Click a row for parameters, body, responses and examples.<button type="button" onclick="document.querySelectorAll('#apidocs details.ep').forEach((d) => d.open = true)">Expand all</button><button type="button" onclick="document.querySelectorAll('#apidocs details.ep').forEach((d) => d.open = false)">Collapse all</button></div>
+		<h3 class="tag-h">Health</h3>
+		<details class="ep m-GET"><summary><span class="method">GET</span><span class="ep-path">/api/health</span><span class="ep-sum">Is the server up?</span><span class="access public" title="no token needed">public</span></summary><div class="ep-body"><div><p>A cheap readiness check. Playwright's <code>webServer.url</code> polls it before any test runs.</p><h4>Responses</h4><div class="resp ok"><span class="code">200</span><span class="rd"><b>OK</b>: the server is ready</span><pre>{
+  &quot;status&quot;: &quot;ok&quot;
+}</pre></div></div><div><h4>Try it: curl</h4><pre>curl http://localhost:3001/api/health</pre><h4>In a Playwright test</h4><pre>const response = await request.get(&#x27;/api/health&#x27;);
+expect(response.ok()).toBeTruthy();</pre></div></div></details>
+		<h3 class="tag-h">Auth</h3>
+		<details class="ep m-POST"><summary><span class="method">POST</span><span class="ep-path">/api/login</span><span class="ep-sum">Sign in, get a token</span><span class="access public" title="no token needed">public</span></summary><div class="ep-body"><div><p>Returns a token for API clients <b>and</b> sets a <code>session</code> cookie for browsers. Each login creates a new session.</p><h4>Request body · application/json</h4><pre>{
+  &quot;email&quot;: &quot;dev@example.com&quot;,
+  &quot;password&quot;: &quot;secret123&quot;
+}</pre><h4>Responses</h4><div class="resp ok"><span class="code">200</span><span class="rd"><b>OK</b>: signed in. Header: <code>Set-Cookie: session=&lt;token&gt;; HttpOnly; Path=/</code></span><pre>{
+  &quot;token&quot;: &quot;3f2c9a1e-…&quot;,
+  &quot;user&quot;: {
+    &quot;id&quot;: 2,
+    &quot;name&quot;: &quot;Dev QA&quot;,
+    &quot;email&quot;: &quot;dev@example.com&quot;,
+    &quot;role&quot;: &quot;qa&quot;
+  }
+}</pre></div><div class="resp bad"><span class="code">400</span><span class="rd"><b>Bad Request</b>: email or password missing, or the body is not JSON</span><pre>{
+  &quot;error&quot;: &quot;email and password are required&quot;
+}</pre></div><div class="resp bad"><span class="code">401</span><span class="rd"><b>Unauthorized</b>: wrong email or password</span><pre>{
+  &quot;error&quot;: &quot;Invalid email or password&quot;
+}</pre></div></div><div><h4>Try it: curl</h4><pre>curl -X POST http://localhost:3001/api/login \
+  -H &#x27;Content-Type: application/json&#x27; \
+  -d &#x27;{&quot;email&quot;:&quot;dev@example.com&quot;,&quot;password&quot;:&quot;secret123&quot;}&#x27;</pre><h4>In a Playwright test</h4><pre>const response = await new AuthApiClient(request).login(users.qa);
+const { token } = await response.json();</pre></div></div></details>
+		<details class="ep m-POST"><summary><span class="method">POST</span><span class="ep-path">/api/logout</span><span class="ep-sum">End the browser session</span><span class="access public" title="no token needed">public</span></summary><div class="ep-body"><div><p>Ends the session named in the <code>session</code> <b>cookie</b> and clears the cookie. The cookie value <i>is</i> the token, so that token stops working too. It ignores the <code>Authorization</code> header: sending only a Bearer token ends nothing (still 204).</p><h4>Responses</h4><div class="resp ok"><span class="code">204</span><span class="rd"><b>No Content</b>: logged out (empty body)</span></div></div><div><h4>Try it: curl</h4><pre>curl -X POST http://localhost:3001/api/logout -b &quot;session=$TOKEN&quot;</pre><h4>In a Playwright test</h4><pre>const response = await request.post(&#x27;/api/logout&#x27;);
+expect(response.status()).toBe(204);</pre></div></div></details>
+		<details class="ep m-GET"><summary><span class="method">GET</span><span class="ep-path">/api/me</span><span class="ep-sum">Who am I?</span><span class="access auth" title="any signed-in user">🔒 auth</span></summary><div class="ep-body"><div><p>Returns the user behind the token or cookie. A quick way to check that auth works.</p><h4>Responses</h4><div class="resp ok"><span class="code">200</span><span class="rd"><b>OK</b>: the signed-in user (never the password)</span><pre>{
+  &quot;id&quot;: 2,
+  &quot;name&quot;: &quot;Dev QA&quot;,
+  &quot;email&quot;: &quot;dev@example.com&quot;,
+  &quot;role&quot;: &quot;qa&quot;
+}</pre></div><div class="resp bad"><span class="code">401</span><span class="rd"><b>Unauthorized</b>: no token, or an unknown token</span><pre>{
+  &quot;error&quot;: &quot;Authentication required&quot;
+}</pre></div></div><div><h4>Try it: curl</h4><pre>curl http://localhost:3001/api/me -H &quot;Authorization: Bearer $TOKEN&quot;</pre><h4>In a Playwright test</h4><pre>const response = await new AuthApiClient(authedRequest).me();
+expect(await response.json()).toMatchObject({ role: &#x27;qa&#x27; });</pre></div></div></details>
+		<h3 class="tag-h">Users</h3>
+		<details class="ep m-GET"><summary><span class="method">GET</span><span class="ep-path">/api/users</span><span class="ep-sum">List users</span><span class="access public" title="no token needed">public</span></summary><div class="ep-body"><div><h4>Responses</h4><div class="resp ok"><span class="code">200</span><span class="rd"><b>OK</b>: all users, without passwords</span><pre>[
+  {
+    &quot;id&quot;: 1,
+    &quot;name&quot;: &quot;Ada Admin&quot;,
+    &quot;email&quot;: &quot;admin@example.com&quot;,
+    &quot;role&quot;: &quot;admin&quot;
+  },
+  {
+    &quot;id&quot;: 2,
+    &quot;name&quot;: &quot;Dev QA&quot;,
+    &quot;email&quot;: &quot;dev@example.com&quot;,
+    &quot;role&quot;: &quot;qa&quot;
+  }
+]</pre></div></div><div><h4>Try it: curl</h4><pre>curl http://localhost:3001/api/users</pre><h4>In a Playwright test</h4><pre>const users: User[] = await (await request.get(&#x27;/api/users&#x27;)).json();</pre></div></div></details>
+		<details class="ep m-GET"><summary><span class="method">GET</span><span class="ep-path">/api/users/{id}</span><span class="ep-sum">Get one user</span><span class="access public" title="no token needed">public</span></summary><div class="ep-body"><div><h4>Parameters</h4><table><tr><th>Name</th><th>In</th><th>Type</th><th>Description</th></tr><tr><td><code>id</code></td><td>path</td><td><code>number</code></td><td>user id, for example <code>1</code></td></tr></table><h4>Responses</h4><div class="resp ok"><span class="code">200</span><span class="rd"><b>OK</b>: the user</span><pre>{
+  &quot;id&quot;: 1,
+  &quot;name&quot;: &quot;Ada Admin&quot;,
+  &quot;email&quot;: &quot;admin@example.com&quot;,
+  &quot;role&quot;: &quot;admin&quot;
+}</pre></div><div class="resp bad"><span class="code">404</span><span class="rd"><b>Not Found</b>: no user with this id</span><pre>{
+  &quot;error&quot;: &quot;User 9 not found&quot;
+}</pre></div></div><div><h4>Try it: curl</h4><pre>curl http://localhost:3001/api/users/1</pre><h4>In a Playwright test</h4><pre>const response = await request.get(&#x27;/api/users/1&#x27;);
+expect(await response.json()).not.toHaveProperty(&#x27;password&#x27;);</pre></div></div></details>
+		<h3 class="tag-h">Posts</h3>
+		<details class="ep m-GET"><summary><span class="method">GET</span><span class="ep-path">/api/posts</span><span class="ep-sum">List posts (with filters)</span><span class="access public" title="no token needed">public</span></summary><div class="ep-body"><div><p>Without a query: every post, drafts included. Filters can be combined.</p><h4>Parameters</h4><table><tr><th>Name</th><th>In</th><th>Type</th><th>Description</th></tr><tr><td><code>published</code></td><td>query</td><td><code>true | false</code></td><td>only published posts, or only drafts</td></tr><tr><td><code>authorId</code></td><td>query</td><td><code>number</code></td><td>only posts by this user</td></tr><tr><td><code>_limit</code></td><td>query</td><td><code>number</code></td><td>return at most N posts</td></tr></table><h4>Responses</h4><div class="resp ok"><span class="code">200</span><span class="rd"><b>OK</b>: an array, maybe empty</span><pre>[
+  {
+    &quot;id&quot;: 1,
+    &quot;title&quot;: &quot;Welcome to the team blog&quot;,
+    &quot;body&quot;: &quot;Read this first.&quot;,
+    &quot;published&quot;: true,
+    &quot;authorId&quot;: 1
+  }
+]</pre></div></div><div><h4>Try it: curl</h4><pre>curl &#x27;http://localhost:3001/api/posts?published=true&amp;_limit=2&#x27;</pre><h4>In a Playwright test</h4><pre>const response = await postsApi.list({ published: true, _limit: 2 });
+// or: request.get(&#x27;/api/posts&#x27;, { params: { published: true, _limit: 2 } })</pre></div></div></details>
+		<details class="ep m-GET"><summary><span class="method">GET</span><span class="ep-path">/api/posts/{id}</span><span class="ep-sum">Get one post</span><span class="access public" title="no token needed">public</span></summary><div class="ep-body"><div><h4>Parameters</h4><table><tr><th>Name</th><th>In</th><th>Type</th><th>Description</th></tr><tr><td><code>id</code></td><td>path</td><td><code>number</code></td><td>post id</td></tr></table><h4>Responses</h4><div class="resp ok"><span class="code">200</span><span class="rd"><b>OK</b>: the post</span><pre>{
+  &quot;id&quot;: 4,
+  &quot;title&quot;: &quot;My first post&quot;,
+  &quot;body&quot;: &quot;Hello&quot;,
+  &quot;published&quot;: false,
+  &quot;authorId&quot;: 2
+}</pre></div><div class="resp bad"><span class="code">404</span><span class="rd"><b>Not Found</b>: no post with this id</span><pre>{
+  &quot;error&quot;: &quot;Post 99 not found&quot;
+}</pre></div></div><div><h4>Try it: curl</h4><pre>curl http://localhost:3001/api/posts/1</pre><h4>In a Playwright test</h4><pre>const response = await postsApi.get(1);
+expect(response.status()).toBe(200);</pre></div></div></details>
+		<details class="ep m-POST"><summary><span class="method">POST</span><span class="ep-path">/api/posts</span><span class="ep-sum">Create a post</span><span class="access auth" title="any signed-in user">🔒 auth</span></summary><div class="ep-body"><div><p>Only <code>title</code> is required. Defaults: <code>body: ""</code>, <code>published: false</code>. The server sets <code>id</code> and <code>authorId</code> (the signed-in user); if you send them, they are ignored.</p><h4>Request body · application/json</h4><pre>{
+  &quot;title&quot;: &quot;My first post&quot;,
+  &quot;body&quot;: &quot;Hello&quot;,
+  &quot;published&quot;: false
+}</pre><h4>Responses</h4><div class="resp ok"><span class="code">201</span><span class="rd"><b>Created</b>: created. Header: <code>Location: /api/posts/4</code></span><pre>{
+  &quot;id&quot;: 4,
+  &quot;title&quot;: &quot;My first post&quot;,
+  &quot;body&quot;: &quot;Hello&quot;,
+  &quot;published&quot;: false,
+  &quot;authorId&quot;: 2
+}</pre></div><div class="resp bad"><span class="code">400</span><span class="rd"><b>Bad Request</b>: invalid body</span><pre>{
+  &quot;error&quot;: &quot;Validation failed&quot;,
+  &quot;details&quot;: [
+    &quot;title must be a non-empty string&quot;
+  ]
+}</pre></div><div class="resp bad"><span class="code">401</span><span class="rd"><b>Unauthorized</b>: no token</span><pre>{
+  &quot;error&quot;: &quot;Authentication required&quot;
+}</pre></div></div><div><h4>Try it: curl</h4><pre>curl -X POST http://localhost:3001/api/posts \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -H &#x27;Content-Type: application/json&#x27; \
+  -d &#x27;{&quot;title&quot;:&quot;My first post&quot;}&#x27;</pre><h4>In a Playwright test</h4><pre>const response = await postsApi.create({ title: &#x27;My first post&#x27; });
+expect(response.status()).toBe(201);</pre></div></div></details>
+		<details class="ep m-PUT"><summary><span class="method">PUT</span><span class="ep-path">/api/posts/{id}</span><span class="ep-sum">Replace a post (all fields)</span><span class="access author" title="the post's author or an admin">🔒 author</span></summary><div class="ep-body"><div><p>Every field is required: <code>title</code>, <code>body</code>, <code>published</code>. A partial body is a 400.</p><h4>Parameters</h4><table><tr><th>Name</th><th>In</th><th>Type</th><th>Description</th></tr><tr><td><code>id</code></td><td>path</td><td><code>number</code></td><td>post id</td></tr></table><h4>Request body · application/json</h4><pre>{
+  &quot;title&quot;: &quot;New title&quot;,
+  &quot;body&quot;: &quot;New body&quot;,
+  &quot;published&quot;: true
+}</pre><h4>Responses</h4><div class="resp ok"><span class="code">200</span><span class="rd"><b>OK</b>: the replaced post</span><pre>{
+  &quot;id&quot;: 4,
+  &quot;title&quot;: &quot;New title&quot;,
+  &quot;body&quot;: &quot;New body&quot;,
+  &quot;published&quot;: true,
+  &quot;authorId&quot;: 2
+}</pre></div><div class="resp bad"><span class="code">400</span><span class="rd"><b>Bad Request</b>: a field is missing or has the wrong type</span><pre>{
+  &quot;error&quot;: &quot;Validation failed&quot;,
+  &quot;details&quot;: [
+    &quot;body must be a string&quot;,
+    &quot;published must be a boolean&quot;
+  ]
+}</pre></div><div class="resp bad"><span class="code">401</span><span class="rd"><b>Unauthorized</b>: no token</span><pre>{
+  &quot;error&quot;: &quot;Authentication required&quot;
+}</pre></div><div class="resp bad"><span class="code">403</span><span class="rd"><b>Forbidden</b>: not your post (and you are not an admin)</span><pre>{
+  &quot;error&quot;: &quot;Only the author or an admin can change this post&quot;
+}</pre></div><div class="resp bad"><span class="code">404</span><span class="rd"><b>Not Found</b>: no post with this id</span><pre>{
+  &quot;error&quot;: &quot;Post 99 not found&quot;
+}</pre></div></div><div><h4>Try it: curl</h4><pre>curl -X PUT http://localhost:3001/api/posts/4 \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -H &#x27;Content-Type: application/json&#x27; \
+  -d &#x27;{&quot;title&quot;:&quot;New title&quot;,&quot;body&quot;:&quot;New body&quot;,&quot;published&quot;:true}&#x27;</pre><h4>In a Playwright test</h4><pre>const response = await postsApi.replace(4, { title: &#x27;New title&#x27;, body: &#x27;New body&#x27;, published: true });</pre></div></div></details>
+		<details class="ep m-PATCH"><summary><span class="method">PATCH</span><span class="ep-path">/api/posts/{id}</span><span class="ep-sum">Update some fields</span><span class="access author" title="the post's author or an admin">🔒 author</span></summary><div class="ep-body"><div><p>Send only the fields you want to change. The others keep their values.</p><h4>Parameters</h4><table><tr><th>Name</th><th>In</th><th>Type</th><th>Description</th></tr><tr><td><code>id</code></td><td>path</td><td><code>number</code></td><td>post id</td></tr></table><h4>Request body · application/json</h4><pre>{
+  &quot;published&quot;: true
+}</pre><h4>Responses</h4><div class="resp ok"><span class="code">200</span><span class="rd"><b>OK</b>: the updated post</span><pre>{
+  &quot;id&quot;: 4,
+  &quot;title&quot;: &quot;My first post&quot;,
+  &quot;body&quot;: &quot;Hello&quot;,
+  &quot;published&quot;: true,
+  &quot;authorId&quot;: 2
+}</pre></div><div class="resp bad"><span class="code">400</span><span class="rd"><b>Bad Request</b>: a sent field has the wrong type</span><pre>{
+  &quot;error&quot;: &quot;Validation failed&quot;,
+  &quot;details&quot;: [
+    &quot;published must be a boolean&quot;
+  ]
+}</pre></div><div class="resp bad"><span class="code">401</span><span class="rd"><b>Unauthorized</b>: no token</span><pre>{
+  &quot;error&quot;: &quot;Authentication required&quot;
+}</pre></div><div class="resp bad"><span class="code">403</span><span class="rd"><b>Forbidden</b>: not your post</span><pre>{
+  &quot;error&quot;: &quot;Only the author or an admin can change this post&quot;
+}</pre></div><div class="resp bad"><span class="code">404</span><span class="rd"><b>Not Found</b>: no post with this id</span><pre>{
+  &quot;error&quot;: &quot;Post 99 not found&quot;
+}</pre></div></div><div><h4>Try it: curl</h4><pre>curl -X PATCH http://localhost:3001/api/posts/4 \
+  -H &quot;Authorization: Bearer $TOKEN&quot; \
+  -H &#x27;Content-Type: application/json&#x27; \
+  -d &#x27;{&quot;published&quot;:true}&#x27;</pre><h4>In a Playwright test</h4><pre>const response = await postsApi.update(4, { published: true });</pre></div></div></details>
+		<details class="ep m-DELETE"><summary><span class="method">DELETE</span><span class="ep-path">/api/posts/{id}</span><span class="ep-sum">Delete a post</span><span class="access author" title="the post's author or an admin">🔒 author</span></summary><div class="ep-body"><div><p>Not available in the UI on purpose: only through the API.</p><h4>Parameters</h4><table><tr><th>Name</th><th>In</th><th>Type</th><th>Description</th></tr><tr><td><code>id</code></td><td>path</td><td><code>number</code></td><td>post id</td></tr></table><h4>Responses</h4><div class="resp ok"><span class="code">204</span><span class="rd"><b>No Content</b>: deleted (empty body)</span></div><div class="resp bad"><span class="code">401</span><span class="rd"><b>Unauthorized</b>: no token</span><pre>{
+  &quot;error&quot;: &quot;Authentication required&quot;
+}</pre></div><div class="resp bad"><span class="code">403</span><span class="rd"><b>Forbidden</b>: not your post</span><pre>{
+  &quot;error&quot;: &quot;Only the author or an admin can change this post&quot;
+}</pre></div><div class="resp bad"><span class="code">404</span><span class="rd"><b>Not Found</b>: no post with this id (or already deleted)</span><pre>{
+  &quot;error&quot;: &quot;Post 99 not found&quot;
+}</pre></div></div><div><h4>Try it: curl</h4><pre>curl -X DELETE http://localhost:3001/api/posts/4 -H &quot;Authorization: Bearer $TOKEN&quot;</pre><h4>In a Playwright test</h4><pre>const response = await postsApi.delete(4);
+expect(response.status()).toBe(204);</pre></div></div></details>
+	</div>
+</details>
+
+<div class="toolbar">
+	<div class="flows" id="flows"></div>
+	<div class="controls">
+		<button id="reset" title="Restart (Home)">⏮</button>
+		<button id="prev" title="Previous step (←)">◀</button>
+		<button id="play" class="primary" title="Play / pause (Space)">▶ Play</button>
+		<button id="next" title="Next step (→)">▶|</button>
+		<span class="counter" id="counter"></span>
+		<select id="speed" title="Speed">
+			<option value="0.6">0.6×</option>
+			<option value="1" selected>1×</option>
+			<option value="1.6">1.6×</option>
+		</select>
+	</div>
+</div>
+<div class="progress" id="progress"></div>
+
+<main>
+	<section class="card graph-card">
+		<h2>What calls what <span style="text-transform:none;letter-spacing:0">(test → fixtures → clients and contexts → HTTP → server)</span></h2>
+		<svg id="graph" viewBox="0 40 1000 610" role="img" aria-label="Lecture 5 API test execution graph">
+			<defs>
+				<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3b5683"/></marker>
+			</defs>
+			<g id="edges"></g>
+			<g id="anims"></g>
+			<g id="nodes"></g>
+		</svg>
+		<div class="legend">
+			<span><i class="sw" style="border-color:var(--test)"></i>test (spec file)</span>
+			<span><i class="sw" style="border-color:var(--builtin)"></i>built-in (<code>request</code>, <code>page</code>)</span>
+			<span><i class="sw" style="border-color:var(--factory)"></i>custom fixture</span>
+			<span><i class="sw" style="border-color:var(--object)"></i>API client</span>
+			<span><i class="sw" style="border-color:var(--pom)"></i>page object</span>
+			<span><i class="sw" style="border-color:#fdba74"></i>saved session file</span>
+			<span><i class="sw" style="border-color:var(--closure)"></i>config</span>
+			<span><i class="sw" style="border-color:var(--data)"></i>local API server</span>
+			<span><i class="ln" style="border-color:var(--call)"></i>call</span>
+			<span><i class="ln" style="border-color:var(--needs)"></i>fixture dependency</span>
+			<span><i class="ln" style="border-color:var(--request)"></i>HTTP request</span>
+			<span><i class="ln" style="border-color:var(--returns)"></i>2xx response</span>
+			<span><i class="ln" style="border-color:var(--error)"></i>4xx response</span>
+			<span><i class="ln" style="border-color:var(--creates)"></i>starts / saves</span>
+			<span><i class="ln" style="border-color:var(--arg)"></i>loads the session</span>
+			<span><i class="ln" style="border-color:var(--browser)"></i>works in the browser</span>
+		</div>
+	</section>
+
+	<div class="side">
+		<section class="card now" id="now"></section>
+		<section class="card">
+			<h2>Code running now</h2>
+			<div class="file" id="file"></div>
+			<pre class="code" id="code"></pre>
+		</section>
+		<section class="card">
+			<h2>Requests, responses and fixture values <span style="text-transform:none;letter-spacing:0">(what the test has at this step; tokens are shortened examples)</span></h2>
+			<div class="memory" id="memory"></div>
+		</section>
+		<section class="card">
+			<h2>All steps</h2>
+			<ol class="timeline" id="timeline"></ol>
+		</section>
+	</div>
+</main>
+
+<footer>
+	Files: <code>playwright.config.ts</code>, <code>fixtures/api.fixture.ts</code>, <code>api/clients/PostsApiClient.ts</code>, <code>api-tests/request-basics.spec.ts</code>, <code>api-tests/posts-crud.spec.ts</code>, <code>ui-tests/auth.setup.ts</code>, <code>ui-tests/posts.spec.ts</code>, <code>server/server.mjs</code>.
+	Keyboard: <code>←</code> <code>→</code> step, <code>Space</code> play/pause, <code>1</code> <code>2</code> <code>3</code> pick a flow, <code>I</code> show/hide the basics panel, <code>A</code> show/hide the API reference.
+	<nav>More: <a href="README.md">Lecture 5 README</a> · <a href="POSTMAN.md">Postman guide</a> · <a href="../04-workshop/patterns/3-fixtures/fixture-flow.html">Lecture 4: Fixtures walkthrough</a></nav>
+</footer>
+
+<script>
+// ===================================================================================
+// 1. GRAPH: test → fixtures / built-ins → clients, contexts, files, browser → server
+//    Rows are chosen so that every arrow into the server runs straight to the right.
+// ===================================================================================
+const NODES = {
+	spec:          { x: 62,  y: 345, w: 100, h: 560, kind: 'test', label: 'TEST', sub: '*.spec.ts' },
+	config:        { x: 520, y: 88,  w: 300, kind: 'config', label: 'playwright.config.ts', sub: 'webServer · baseURL · projects', badge: 'CONFIG' },
+	request:       { x: 250, y: 165, w: 190, kind: 'builtin', label: 'request', sub: 'no token · keeps cookies', badge: 'BUILT-IN FIXTURE' },
+	apiToken:      { x: 250, y: 265, w: 190, kind: 'fixture', label: 'apiToken', sub: 'logs in → token', badge: 'FIXTURE' },
+	postsApi:      { x: 250, y: 365, w: 190, kind: 'client', label: 'postsApi', sub: 'a PostsApiClient', badge: 'FIXTURE · API CLIENT' },
+	posts:         { x: 250, y: 465, w: 190, kind: 'fixture', label: 'posts', sub: 'create · track · cleanup', badge: 'FIXTURE · TEST DATA' },
+	postsPage:     { x: 250, y: 565, w: 190, kind: 'pom', label: 'postsPage', sub: 'PostsPage (POM)', badge: 'FIXTURE · PAGE OBJECT' },
+	authClient:    { x: 520, y: 265, w: 210, kind: 'client', label: 'AuthApiClient', sub: 'login(credentials)', badge: 'API CLIENT' },
+	authedRequest: { x: 520, y: 365, w: 210, kind: 'fixture', label: 'authedRequest', sub: 'Authorization: Bearer …', badge: 'FIXTURE · OWN CONTEXT' },
+	authFile:      { x: 520, y: 465, w: 210, kind: 'file', label: '.auth/qa.json', sub: 'saved session cookie', badge: 'FILE · storageState' },
+	browser:       { x: 520, y: 565, w: 210, kind: 'builtin', label: 'page', sub: 'browser tab, signed in', badge: 'BROWSER' },
+	server:        { x: 910, y: 345, w: 140, h: 560, kind: 'server', label: 'server.mjs', sub: 'localhost:3001' },
+};
+const H = 60;
+const FINISHING = ['config'];
+const MEMORY_EMPTY = 'empty: no request has been sent yet';
+
+const EDGES = [
+	['config', 'server', 'creates'],
+	['spec', 'request', 'call'], ['request', 'server', 'request'],
+	['request', 'authClient', 'uses'], ['request', 'authFile', 'creates'],
+	['apiToken', 'authClient', 'call'], ['authClient', 'server', 'request'],
+	['apiToken', 'authedRequest', 'needs'],
+	['spec', 'postsApi', 'call'], ['postsApi', 'authedRequest', 'uses'], ['authedRequest', 'server', 'request'],
+	['spec', 'posts', 'call'], ['posts', 'postsApi', 'needs', 'M170,435 L170,399'],
+	['authFile', 'browser', 'arg', 'M440,495 L440,531'],
+	['spec', 'postsPage', 'call'], ['postsPage', 'browser', 'browser'], ['browser', 'server', 'request'],
+];
+const TEMP = {};
+
+// ===================================================================================
+// 2. CODE SNIPPETS: copied from the real files, with their real line numbers.
+// ===================================================================================
+const CODE = {
+	"pkg": {
+		"file": "package.json",
+		"start": 12,
+		"lines": [
+			"    \"test:workshop\": \"playwright test lectures/04-workshop\",",
+			"    \"test:api\": \"playwright test -c lectures/05-api-testing\",",
+			"    \"start:api\": \"node lectures/05-api-testing/server/server.mjs\""
+		]
+	},
+	"boot": {
+		"file": "server/server.mjs",
+		"numbered": [
+			[
+				34,
+				"const PORT = Number(process.env.PORT ?? 3001);"
+			],
+			[
+				"…",
+				""
+			],
+			[
+				250,
+				"server.listen(PORT, () => console.log(`Lecture 5 API listening on http://localhost:${PORT}`));"
+			]
+		]
+	},
+	"health": {
+		"file": "server/server.mjs",
+		"start": 125,
+		"lines": [
+			"const routes = [",
+			"  ['GET', '/api/health', () => [200, { status: 'ok' }]],"
+		]
+	},
+	"config": {
+		"file": "playwright.config.ts",
+		"start": 17,
+		"lines": [
+			"export default defineConfig({",
+			"  timeout: 30_000,",
+			"  forbidOnly: !!process.env.CI,",
+			"  retries: process.env.CI ? 2 : 0,",
+			"  reporter: [['html', { outputFolder: '../../playwright-report', open: 'never' }], ['list']],",
+			"  outputDir: '../../test-results',",
+			"",
+			"  // Playwright starts the server before the tests and stops it afterwards. If it is",
+			"  // already running locally (you started it by hand), the running one is reused.",
+			"  webServer: {",
+			"    command: 'node server/server.mjs',",
+			"    url: `${BASE_URL}/api/health`,",
+			"    reuseExistingServer: !process.env.CI,",
+			"    env: { PORT: String(PORT) },",
+			"  },",
+			"",
+			"  use: {",
+			"    // Used by BOTH `request` and `page`: request.get('/api/posts'), page.goto('/posts.html').",
+			"    // Keep it to the origin only. A path here ('.../api') would be dropped by",
+			"    // request.get('/posts'), because a leading '/' means \"from the root\".",
+			"    baseURL: BASE_URL,",
+			"    trace: 'retain-on-failure',",
+			"  },",
+			"",
+			"  projects: [",
+			"    // API tests use only `request`, so Playwright never launches a browser for them.",
+			"    { name: 'api', testDir: './api-tests' },",
+			"",
+			"    // Signs in through the API once and saves the session for the UI projects.",
+			"    { name: 'setup', testDir: './ui-tests', testMatch: /.*\\.setup\\.ts/ },",
+			"",
+			"    {",
+			"      name: 'ui-chrome',",
+			"      testDir: './ui-tests',",
+			"      dependencies: ['setup'],",
+			"      use: { ...devices['Desktop Chrome'], channel: 'chrome', storageState: AUTH_FILE },",
+			"    },",
+			"    {",
+			"      name: 'ui-firefox',",
+			"      testDir: './ui-tests',",
+			"      dependencies: ['setup'],",
+			"      use: { ...devices['Desktop Firefox'], storageState: AUTH_FILE },",
+			"    },",
+			"  ],"
+		]
+	},
+	"basics": {
+		"file": "api-tests/request-basics.spec.ts",
+		"start": 11,
+		"lines": [
+			"test('GET a collection, then a missing item returns 404', async ({ request }) => {",
+			"  const response = await request.get('/api/posts');",
+			"  expect(response.status()).toBe(200);",
+			"  expect(response.headers()['content-type']).toContain('application/json');",
+			"",
+			"  const posts: Post[] = await response.json();",
+			"  expect(posts.length).toBeGreaterThan(0);",
+			"  const published = posts.filter((post) => post.published);",
+			"  expect(published.every((post) => typeof post.title === 'string')).toBe(true);",
+			"",
+			"  const missing = await request.get('/api/posts/non-existent-id');",
+			"  expect(missing.status()).toBe(404);",
+			"});"
+		]
+	},
+	"fixture": {
+		"file": "fixtures/api.fixture.ts",
+		"start": 3,
+		"lines": [
+			"// Dependency chain (Playwright builds it on demand, only for the fixtures a test asks for):",
+			"//",
+			"//   user (option, 'qa')",
+			"//     └─> apiToken          logs in through POST /api/login, returns the token",
+			"//           └─> authedRequest   APIRequestContext that sends `Authorization: Bearer <token>`",
+			"//                 └─> postsApi        PostsApiClient that acts as the signed-in user",
+			"//                       └─> posts           creates posts and DELETES them after the test",
+			"//",
+			"// All fixtures are test-scoped: they depend on `baseURL`, which is a test-scoped option.",
+			"// Logging in through the API takes a few milliseconds, so doing it per test is fine.",
+			"import { test as base, expect, type APIRequestContext } from '@playwright/test';",
+			"import { AuthApiClient } from '../api/clients/AuthApiClient';",
+			"import { PostsApiClient } from '../api/clients/PostsApiClient';",
+			"import { buildPost } from '../api/data/postFactory';",
+			"import { users, type UserKey } from '../api/data/users';",
+			"import type { CreatePostInput, LoginResponse, Post } from '../api/types';",
+			"",
+			"// Test data manager: the test creates, the fixture remembers and cleans up.",
+			"export interface PostsData {",
+			"  // Creates a valid post through the API (any field can be overridden) and tracks it.",
+			"  create(overrides?: Partial<CreatePostInput>): Promise<Post>;",
+			"  // Tracks a post that was created some other way (for example through the UI).",
+			"  track(id: number): void;",
+			"}",
+			"",
+			"export type ApiFixtures = {",
+			"  // Option fixture: who the API fixtures sign in as. Change it with test.use({ user: 'admin' }).",
+			"  user: UserKey;",
+			"  apiToken: string;",
+			"  authedRequest: APIRequestContext;",
+			"  postsApi: PostsApiClient;",
+			"  posts: PostsData;",
+			"};",
+			"",
+			"export const test = base.extend<ApiFixtures>({",
+			"  user: ['qa', { option: true }],",
+			"",
+			"  apiToken: async ({ playwright, baseURL, user }, use) => {",
+			"    // A separate, short-lived context just for logging in. Using the built-in `request`",
+			"    // would store the session cookie in it, and anonymous `request` calls in the same",
+			"    // test would suddenly be signed in.",
+			"    const loginContext = await playwright.request.newContext({ baseURL });",
+			"    const response = await new AuthApiClient(loginContext).login(users[user]);",
+			"    expect(response.status(), `login as \"${user}\" should succeed`).toBe(200);",
+			"    const { token } = (await response.json()) as LoginResponse;",
+			"    await loginContext.dispose();",
+			"",
+			"    await use(token);",
+			"  },",
+			"",
+			"  authedRequest: async ({ playwright, baseURL, apiToken }, use) => {",
+			"    const context = await playwright.request.newContext({",
+			"      baseURL,",
+			"      extraHTTPHeaders: { Authorization: `Bearer ${apiToken}` },",
+			"    });",
+			"    await use(context);",
+			"    // Teardown: a context we create, we must close. The built-in `request` is closed for us.",
+			"    await context.dispose();",
+			"  },",
+			"",
+			"  postsApi: async ({ authedRequest }, use) => {",
+			"    await use(new PostsApiClient(authedRequest));",
+			"  },",
+			"",
+			"  posts: async ({ postsApi }, use) => {",
+			"    const createdIds: number[] = [];",
+			"",
+			"    await use({",
+			"      async create(overrides) {",
+			"        const response = await postsApi.create(buildPost(overrides));",
+			"        expect(response.status(), 'seeding a post should return 201').toBe(201);",
+			"        const post = (await response.json()) as Post;",
+			"        createdIds.push(post.id);",
+			"        return post;",
+			"      },",
+			"      track(id) {",
+			"        createdIds.push(id);",
+			"      },",
+			"    });",
+			"",
+			"    // Teardown runs after the test, even when it failed. 404 is fine: the test",
+			"    // may have deleted the post itself.",
+			"    for (const id of createdIds) {",
+			"      const response = await postsApi.delete(id);",
+			"      expect([204, 404], `cleanup of post ${id}`).toContain(response.status());",
+			"    }",
+			"  },",
+			"});"
+		]
+	},
+	"client": {
+		"file": "api/clients/PostsApiClient.ts",
+		"start": 18,
+		"lines": [
+			"export class PostsApiClient {",
+			"  constructor(private readonly request: APIRequestContext) {}",
+			"",
+			"  list(query: PostQuery = {}): Promise<APIResponse> {",
+			"    return this.request.get('/api/posts', { params: { ...query } });",
+			"  }",
+			"",
+			"  get(id: number): Promise<APIResponse> {",
+			"    return this.request.get(`/api/posts/${id}`);",
+			"  }",
+			"",
+			"  create(input: CreatePostInput): Promise<APIResponse> {",
+			"    return this.request.post('/api/posts', { data: input });",
+			"  }",
+			"",
+			"  update(id: number, changes: UpdatePostInput): Promise<APIResponse> {",
+			"    return this.request.patch(`/api/posts/${id}`, { data: changes });",
+			"  }",
+			"",
+			"  replace(id: number, post: ReplacePostInput): Promise<APIResponse> {",
+			"    return this.request.put(`/api/posts/${id}`, { data: post });",
+			"  }",
+			"",
+			"  delete(id: number): Promise<APIResponse> {",
+			"    return this.request.delete(`/api/posts/${id}`);",
+			"  }",
+			"}"
+		]
+	},
+	"crud": {
+		"file": "api-tests/posts-crud.spec.ts",
+		"start": 10,
+		"lines": [
+			"test('create, read, update, replace and delete a post', async ({ postsApi, posts }) => {",
+			"  const input = buildPost({ published: false });",
+			"  let id = 0;",
+			"",
+			"  await test.step('POST creates the post: 201 + Location header', async () => {",
+			"    const response = await postsApi.create(input);",
+			"    expect(response.status()).toBe(201);",
+			"",
+			"    const created: Post = await response.json();",
+			"    id = created.id;",
+			"    // Register it for cleanup right away, in case a later step fails.",
+			"    posts.track(id);",
+			"    expect(created).toMatchObject(input);",
+			"    expect(response.headers()['location']).toBe(`/api/posts/${id}`);",
+			"  });",
+			"",
+			"  await test.step('GET returns the saved post', async () => {",
+			"    const response = await postsApi.get(id);",
+			"    expect(response.status()).toBe(200);",
+			"    expect(await response.json()).toMatchObject({ id, ...input });",
+			"  });",
+			"",
+			"  await test.step('PATCH changes only the fields that were sent', async () => {",
+			"    const response = await postsApi.update(id, { published: true });",
+			"    expect(response.status()).toBe(200);",
+			"    expect(await response.json()).toMatchObject({ title: input.title, published: true });",
+			"  });",
+			"",
+			"  await test.step('PUT replaces the whole post', async () => {",
+			"    const replacement = buildPost({ published: false });",
+			"    const response = await postsApi.replace(id, replacement);",
+			"    expect(response.status()).toBe(200);",
+			"    expect(await response.json()).toEqual({ id, authorId: 2, ...replacement });",
+			"  });",
+			"",
+			"  await test.step('DELETE removes it: 204, then GET returns 404', async () => {",
+			"    const response = await postsApi.delete(id);",
+			"    expect(response.status()).toBe(204);",
+			"    expect((await postsApi.get(id)).status()).toBe(404);",
+			"  });",
+			"});"
+		]
+	},
+	"server": {
+		"file": "server/server.mjs",
+		"start": 128,
+		"lines": [
+			"  ['POST', '/api/login', async ({ req }) => {",
+			"    const { email, password } = await readJson(req);",
+			"    if (typeof email !== 'string' || typeof password !== 'string') {",
+			"      throw new HttpError(400, 'email and password are required');",
+			"    }",
+			"    const user = users.find((u) => u.email === email && u.password === password);",
+			"    if (!user) throw new HttpError(401, 'Invalid email or password');",
+			"    const token = randomUUID();",
+			"    sessions.set(token, user.id);",
+			"    // The same token is also set as a cookie, so a browser is signed in too.",
+			"    return [200, { token, user: publicUser(user) }, { 'Set-Cookie': `session=${token}; HttpOnly; Path=/; SameSite=Lax` }];",
+			"  }],",
+			"",
+			"  ['POST', '/api/logout', ({ req }) => {",
+			"    sessions.delete(sessionCookie(req));",
+			"    return [204, undefined, { 'Set-Cookie': 'session=; HttpOnly; Path=/; Max-Age=0' }];",
+			"  }],",
+			"",
+			"  ['GET', '/api/me', ({ req }) => [200, publicUser(requireUser(req))]],",
+			"",
+			"  ['GET', '/api/users', () => [200, users.map(publicUser)]],",
+			"",
+			"  ['GET', '/api/users/:id', ({ params }) => {",
+			"    const user = users.find((u) => u.id === Number(params.id));",
+			"    if (!user) throw new HttpError(404, `User ${params.id} not found`);",
+			"    return [200, publicUser(user)];",
+			"  }],",
+			"",
+			"  ['GET', '/api/posts', ({ query }) => {",
+			"    let result = posts;",
+			"    if (query.has('published')) result = result.filter((p) => String(p.published) === query.get('published'));",
+			"    if (query.has('authorId')) result = result.filter((p) => p.authorId === Number(query.get('authorId')));",
+			"    if (query.has('_limit')) result = result.slice(0, Number(query.get('_limit')));",
+			"    return [200, result];",
+			"  }],",
+			"",
+			"  ['GET', '/api/posts/:id', ({ params }) => [200, findPost(params.id)]],",
+			"",
+			"  ['POST', '/api/posts', async ({ req }) => {",
+			"    const user = requireUser(req);",
+			"    const fields = validatePost(await readJson(req), { full: false });",
+			"    if (fields.title === undefined) throw new HttpError(400, 'Validation failed', ['title is required']);",
+			"    const post = { id: nextPostId++, body: '', published: false, ...fields, authorId: user.id };",
+			"    posts.push(post);",
+			"    return [201, post, { Location: `/api/posts/${post.id}` }];",
+			"  }],",
+			"",
+			"  ['PUT', '/api/posts/:id', async ({ req, params }) => {",
+			"    const user = requireUser(req);",
+			"    const post = findPost(params.id);",
+			"    requireAuthor(user, post);",
+			"    Object.assign(post, validatePost(await readJson(req), { full: true }));",
+			"    return [200, post];",
+			"  }],",
+			"",
+			"  ['PATCH', '/api/posts/:id', async ({ req, params }) => {",
+			"    const user = requireUser(req);",
+			"    const post = findPost(params.id);",
+			"    requireAuthor(user, post);",
+			"    Object.assign(post, validatePost(await readJson(req), { full: false }));",
+			"    return [200, post];",
+			"  }],",
+			"",
+			"  ['DELETE', '/api/posts/:id', ({ req, params }) => {",
+			"    const user = requireUser(req);",
+			"    const post = findPost(params.id);",
+			"    requireAuthor(user, post);",
+			"    posts.splice(posts.indexOf(post), 1);",
+			"    return [204];",
+			"  }],"
+		]
+	},
+	"setup": {
+		"file": "ui-tests/auth.setup.ts",
+		"start": 15,
+		"lines": [
+			"// Same path as `storageState` in playwright.config.ts. The .auth folder is git-ignored:",
+			"// it contains a live session.",
+			"const authFile = join(__dirname, '../.auth/qa.json');",
+			"",
+			"setup('sign in as the QA user through the API', async ({ request }) => {",
+			"  const response = await new AuthApiClient(request).login(users.qa);",
+			"  expect(response.status()).toBe(200);",
+			"",
+			"  await request.storageState({ path: authFile });",
+			"});"
+		]
+	},
+	"uiSpec": {
+		"file": "ui-tests/posts.spec.ts",
+		"start": 10,
+		"lines": [
+			"test('a post seeded through the API is shown in the UI', async ({ posts, postsPage }) => {",
+			"  // Arrange: one fast API call instead of filling in the form.",
+			"  const post = await posts.create({ published: true });",
+			"",
+			"  // Act + Assert: the UI is what we really test here.",
+			"  await postsPage.goto();",
+			"  await expect(postsPage.signedInAs).toHaveText('Signed in as Dev QA');",
+			"  await expect(postsPage.post(post.title)).toContainText('by Dev QA');",
+			"  await expect(postsPage.post(post.title)).toContainText('Published');",
+			"  // No cleanup code: the `posts` fixture deletes the post after the test.",
+			"});"
+		]
+	}
+};
+
+// ===================================================================================
+// 3. REQUESTS, RESPONSES AND FIXTURE VALUES shown in the side panel
+//    (token values are shortened examples; the server makes a random UUID)
+// ===================================================================================
+const SCOPES = {
+	ws: { kind: 'config', title: 'webServer', note: 'playwright.config.ts', label: 'settings',
+		vars: [['command', "'node server/server.mjs'"], ['cwd', 'the config folder (default)'], ['env', "{ PORT: '3001' }"],
+			['url', "'http://localhost:3001/api/health'"], ['reuseExistingServer', 'true locally · false when CI=true'], ['timeout', '60 000 ms (default)']] },
+	wsCheck: { kind: 'server', title: 'GET /api/health (before starting)', note: 'reuse check', label: 'possible answers',
+		vars: [['no answer', 'port is free → start the command'], ['200 + reuse on', 'use the running server, start nothing'],
+			['200 + CI', 'error: port 3001 is already used']] },
+	wsPoll: { kind: 'ok', title: 'GET /api/health (polling)', note: 'readiness check', label: 'what came back',
+		vars: [['try 1', 'connection refused (still booting)'], ['try 2', "200 { status: 'ok' } → ready"],
+			['ready when', '2xx · 3xx · 400–403'], ['no answer in 60 s', 'the run fails, no test runs']] },
+	req: { kind: 'builtin', title: 'request', note: 'built-in fixture', label: 'settings',
+		vars: [['baseURL', "'http://localhost:3001' (from the config)"], ['headers', 'none: an anonymous client'],
+			['cookies', 'empty'], ['lifetime', 'new for each test, disposed for you']] },
+	get200: { kind: 'ok', title: 'GET /api/posts', note: 'response', label: 'what came back',
+		vars: [['status()', '200'], ['ok()', 'true (any 200–299)'], ['content-type', 'application/json'],
+			['json()', '[{ id: 1, … }, { id: 2, … }, { id: 3, … }]']] },
+	get404: { kind: 'error', title: 'GET /api/posts/non-existent-id', note: 'response', label: 'what came back',
+		vars: [['status()', '404'], ['ok()', 'false, but nothing throws'], ['json()', "{ error: 'Post non-existent-id not found' }"]] },
+
+	login: { kind: 'ok', title: 'POST /api/login', note: 'response', label: 'request → response',
+		vars: [['data', "{ email: 'dev@example.com', password: '…' }"], ['status()', '200'],
+			['json().token', "'3f2c…' (random UUID)"], ['json().user', "{ id: 2, name: 'Dev QA', role: 'qa' }"]] },
+	fxToken: { kind: 'fixture', title: 'fixtures for this test', note: 'test-scoped', label: 'values',
+		vars: [['user', "'qa' (option, the default)"], ['apiToken', "'3f2c…'"], ['authedRequest', 'not built yet'],
+			['postsApi', 'not built yet'], ['createdIds', 'not built yet']] },
+	fxAuthed: { kind: 'fixture', title: 'fixtures for this test', note: 'test-scoped', label: 'values',
+		vars: [['user', "'qa'"], ['apiToken', "'3f2c…'"], ['authedRequest', 'context + Bearer 3f2c…'],
+			['postsApi', 'not built yet'], ['createdIds', 'not built yet']] },
+	fxAll: { kind: 'fixture', title: 'fixtures for this test', note: 'test-scoped', label: 'values',
+		vars: [['user', "'qa'"], ['apiToken', "'3f2c…'"], ['authedRequest', 'context + Bearer 3f2c…'],
+			['postsApi', 'new PostsApiClient(authedRequest)'], ['createdIds', '[ ]']] },
+	fxTracked: { kind: 'fixture', title: 'fixtures for this test', note: 'test-scoped', label: 'values',
+		vars: [['user', "'qa'"], ['apiToken', "'3f2c…'"], ['authedRequest', 'context + Bearer 3f2c…'],
+			['postsApi', 'new PostsApiClient(authedRequest)'], ['createdIds', '[ 4 ]  ← tracked for cleanup']] },
+	created: { kind: 'ok', title: 'POST /api/posts', note: 'response', label: 'what came back',
+		vars: [['status()', '201 Created'], ['location', "'/api/posts/4'"],
+			['json()', '{ id: 4, authorId: 2, title: …, published: false }']] },
+	checks: { kind: 'server', title: 'server: checks before every write', note: 'server.mjs', label: 'in this order',
+		vars: [['1. requireUser', 'no or bad token → 401'], ['2. findPost', 'unknown id → 404'],
+			['3. requireAuthor', 'not your post → 403'], ['4. validatePost', 'bad body → 400'], ['5. handler', '200 · 201 · 204']] },
+	deleted: { kind: 'ok', title: 'DELETE /api/posts/4', note: 'response', label: 'what came back',
+		vars: [['status()', '204 No Content'], ['body', 'empty'], ['GET /api/posts/4', '404: really gone']] },
+	teardown: { kind: 'fixture', title: 'teardown (after the test)', note: 'reverse order', label: 'steps',
+		vars: [['posts', 'DELETE each tracked id: 204 or 404 is ok'], ['postsApi', 'nothing to clean'],
+			['authedRequest', 'context.dispose()'], ['apiToken', 'nothing to clean']] },
+
+	cookie: { kind: 'builtin', title: 'request after the login', note: 'setup project', label: 'state',
+		vars: [['Set-Cookie', 'session=3f2c…; HttpOnly; Path=/'], ['cookies', 'session=3f2c… (kept, like a browser)']] },
+	storage: { kind: 'file', title: '.auth/qa.json', note: 'storageState · git-ignored', label: 'content',
+		vars: [['cookies', "[{ name: 'session', value: '3f2c…', domain: 'localhost', … }]"], ['origins', '[ ]  (no localStorage)']] },
+	browserCtx: { kind: 'builtin', title: 'browser context (ui-chrome)', note: 'new for every test', label: 'state',
+		vars: [['storageState', '.auth/qa.json'], ['cookies', 'session=3f2c… → signed in'], ['login form', 'never opened']] },
+	uiFx: { kind: 'fixture', title: 'fixtures for this UI test', note: 'ui.fixture.ts', label: 'values',
+		vars: [['postsPage', 'new PostsPage(page)'], ['apiToken', "'9a7e…' (a 2nd login, for the API side)"],
+			['postsApi', 'PostsApiClient, signed in as QA'], ['createdIds', '[ 5 ]  ← seeded, tracked']] },
+};
+
+// ===================================================================================
+// 4. FLOWS
+//    Node states: idle | unused | running | used | busy | alive | finished | error | done
+//    Edge animations: [edgeId, kind, reverse?]. A reversed edge is the response coming back.
+// ===================================================================================
+const PHASES = {
+	start: ['start', '#94a3b8'], server: ['webServer', '#2dd4bf'], resolve: ['fixtures', '#e879f9'], call: ['call', '#fb923c'], http: ['HTTP request', '#7dd3fc'],
+	ok: ['2xx response', '#34d399'], fail: ['4xx response', '#f87171'], save: ['save session', '#fdba74'],
+	assert: ['assert', '#fbbf24'], teardown: ['teardown', '#a78bfa'], done: ['done', '#22c55e'],
+};
+
+// Flows 2 and 3 start after the server is already running.
+const SERVER_UP = { config: 'finished', server: 'alive' };
+
+const FLOWS = [
+	{ id: 'basics', name: 'Flow 1 · Server start + raw request', hint: 'webServer · request-basics.spec.ts',
+		edges: ['config>server', 'spec>request', 'request>server'],
+		steps: [
+			{ phase: 'start', title: 'You run npm run test:api',
+				text: `The script only runs <code>playwright test -c lectures/05-api-testing</code>. <b>Nothing</b> in the tests, fixtures or scripts starts the server. The test runner reads the config, finds the <code>webServer</code> block and handles the server <b>by itself</b>, before any worker or test starts.`,
+				set: { config: 'running', browser: 'unused', postsPage: 'unused', authFile: 'unused' }, status: { server: 'not running' },
+				edges: [], code: ['pkg', [13]], mem: ['ws'] },
+			{ phase: 'server', title: 'Is a server already running?',
+				text: `First the runner sends a request to <code>webServer.url</code>. Nothing answers, so the port is free and it must start the server. If something <b>did</b> answer (you ran <code>npm run start:api</code>), <code>reuseExistingServer: true</code> means "use it and start nothing". On CI it is <code>false</code>, so a busy port fails the run instead of testing some other process.`,
+				set: { config: 'used' }, status: { server: 'port 3001: free' }, edges: [['config>server', 'request'], ['config>server', 'error', true]],
+				code: ['config', [26, 28, 29]], mem: ['ws', 'wsCheck'], hl: ['ws.url', 'ws.reuseExistingServer', 'wsCheck.no answer', 'wsCheck.200 + reuse on'] },
+			{ phase: 'server', title: 'Run the command as a child process',
+				text: `The runner runs <code>node server/server.mjs</code> like a terminal would, in the <b>config's folder</b> (that is why the relative path works) with <code>PORT=3001</code> added to the environment. The server reads <code>process.env.PORT</code> and starts listening.`,
+				set: { config: 'used', server: 'running' }, status: { server: 'booting…' }, edges: [['config>server', 'creates']],
+				code: ['config', [26, 27, 30]], mem: ['ws'], hl: ['ws.command', 'ws.cwd', 'ws.env'] },
+			{ phase: 'server', title: 'Poll /api/health until it answers',
+				text: `Starting a process is not the same as being <b>ready</b>. The runner keeps requesting <code>/api/health</code> until it gets a 2xx answer. That is the only job of this route: a cheap "I'm up" check. If it never answers within <code>timeout</code> (60 s by default), the run fails before any test.`,
+				set: { config: 'used', server: 'busy' }, status: { server: 'GET /api/health → 200' },
+				edges: [['config>server', 'request'], ['config>server', 'returns', true]],
+				code: ['health', [126]], mem: ['ws', 'wsPoll'], hl: ['wsPoll.try 2', 'wsPoll.ready when'] },
+			{ phase: 'server', title: 'Ready: the server is up for the whole run',
+				text: `Now the tests start. The server is started <b>once per run</b>, not per test or per project, and every project (<code>api</code>, <code>setup</code>, <code>ui-*</code>) talks to the same process. Its data is in memory, so every run starts from the seed data.`,
+				set: { config: 'finished', server: 'alive' }, edges: [], code: ['boot', [34, 250]], mem: ['ws'] },
+			{ phase: 'start', title: 'The api project starts no browser',
+				text: `The <code>api</code> project runs the files in <code>api-tests/</code>. These tests ask for <code>request</code>, never for <code>page</code>, so <b>no browser is launched</b>. API tests take milliseconds, not seconds.`,
+				set: { spec: 'used' }, edges: [], code: ['config', [42, 43]], mem: [] },
+			{ phase: 'call', title: 'The test asks for { request }',
+				text: `<code>request</code> is a <b>built-in fixture</b>: an <code>APIRequestContext</code> that already knows the <code>baseURL</code> from the config. It sends no token, so it is an <b>anonymous</b> client. Each test gets a fresh one.`,
+				set: { request: 'running' }, edges: [['spec>request', 'call']], code: ['basics', [11]], mem: ['req'], hl: ['req.baseURL', 'req.headers'] },
+			{ phase: 'http', title: "request.get('/api/posts')",
+				text: `The path starts with <code>/</code>, so it is added to the <code>baseURL</code>: <code>http://localhost:3001/api/posts</code>. This is a real HTTP request: no page and no HTML, only JSON.`,
+				set: { request: 'used', server: 'busy' }, status: { server: 'GET /api/posts' },
+				edges: [['spec>request', 'call'], ['request>server', 'request']], code: ['basics', [12]], mem: ['req'] },
+			{ phase: 'ok', title: 'Response: 200 + JSON',
+				text: `<code>await</code> gives you an <code>APIResponse</code>. Check the <b>status first</b>, then the headers. <code>response.json()</code> reads the body. Typing it as <code>Post[]</code> lets the editor know the fields.`,
+				set: { server: 'alive' }, status: { server: '200 OK' },
+				edges: [['request>server', 'returns', true]], code: ['basics', [13, 14, 16]], mem: ['req', 'get200'], hl: ['get200.status()', 'get200.content-type'] },
+			{ phase: 'assert', title: 'Assert the body, not only the status',
+				text: `A <b>200 with the wrong data</b> is still a bug. The test checks that the list is not empty and that every published post has a string title.`,
+				set: {}, edges: [], code: ['basics', [17, 18, 19]], mem: ['req', 'get200'], hl: ['get200.json()'] },
+			{ phase: 'fail', title: 'A missing post: 404',
+				text: `<code>request</code> does <b>not throw</b> on 4xx or 5xx. The response comes back like any other, and the test checks the status. That is how negative tests work. (Pass <code>failOnStatusCode: true</code> if you want it to throw.)`,
+				set: { request: 'used', server: 'busy' }, status: { server: '404 Not Found' },
+				edges: [['request>server', 'request'], ['request>server', 'error', true]], code: ['basics', [21, 22]], mem: ['req', 'get404'], hl: ['get404.status()', 'get404.ok()'] },
+			{ phase: 'done', title: 'Passed: request is cleaned up for you',
+				text: `No setup and no cleanup: GET requests don't change data, and Playwright disposes the built-in <code>request</code> after the test. Next question: what if an endpoint needs a <b>token</b>? (flow 2)`,
+				set: { spec: 'done', request: 'finished', server: 'alive' }, edges: [], code: ['basics', [11, 12, 13, 21, 22, 23]], mem: [] },
+			{ phase: 'server', title: 'After the last test: the server is stopped',
+				text: `When <b>all</b> projects are done, the runner stops the process it started. The next run starts a fresh server with fresh seed data. A server it only <b>reused</b> is left running, because the runner did not start it. To watch all of this, run <code>DEBUG=pw:webserver npm run test:api</code>.`,
+				set: { config: 'used', server: 'finished' }, status: { config: 'stops the server', server: 'stopped' }, edges: [['config>server', 'creates']],
+				code: ['config', [24, 25, 26, 29]], mem: ['ws'], hl: ['ws.reuseExistingServer'] },
+		] },
+
+	{ id: 'crud', name: 'Flow 2 · Fixtures + CRUD', hint: 'posts-crud.spec.ts · token · cleanup',
+		edges: ['spec>postsApi', 'spec>posts', 'posts>postsApi', 'postsApi>authedRequest', 'apiToken>authedRequest', 'apiToken>authClient', 'authClient>server', 'authedRequest>server'],
+		steps: [
+			{ phase: 'start', title: 'The test asks for { postsApi, posts }',
+				text: `Compare with flow 1: there is <b>no URL, no token and no cleanup</b> in this test. It only names the fixtures it needs. The server is already running.`,
+				set: { ...SERVER_UP, spec: 'used', request: 'unused', browser: 'unused', postsPage: 'unused', authFile: 'unused' },
+				edges: [], code: ['crud', [10]], mem: [] },
+			{ phase: 'resolve', title: 'Playwright builds the fixture chain',
+				text: `Before the test body runs, Playwright builds the fixtures in <b>dependency order</b>. <code>posts</code> needs <code>postsApi</code>, which needs <code>authedRequest</code>, which needs <code>apiToken</code>. So <code>apiToken</code> is built <b>first</b>.`,
+				set: {}, edges: [['spec>posts', 'needs'], ['posts>postsApi', 'needs'], ['postsApi>authedRequest', 'needs'], ['apiToken>authedRequest', 'needs', true]],
+				code: ['fixture', [5, 6, 7, 8, 9]], mem: [] },
+			{ phase: 'call', title: 'apiToken: log in through a throwaway context',
+				text: `<code>apiToken</code> creates its <b>own</b> short-lived context and calls <code>AuthApiClient.login()</code> as the QA user (the <code>user</code> option). Why not the built-in <code>request</code>? It would keep the session cookie, and "anonymous" calls in the same test would suddenly be signed in.`,
+				set: { apiToken: 'running', authClient: 'used', server: 'busy' }, status: { server: 'POST /api/login' },
+				edges: [['apiToken>authClient', 'call'], ['authClient>server', 'request']], code: ['fixture', [40, 41, 42, 43, 44, 45]], mem: [] },
+			{ phase: 'ok', title: '200 + token, then dispose the login context',
+				text: `The server checks the password, stores a session and answers <code>{ token, user }</code>. The fixture reads the token, closes the login context, and <b>hands the token on</b> with <code>use(token)</code>.`,
+				set: { server: 'alive' }, status: { server: '200 OK' },
+				edges: [['authClient>server', 'returns', true], ['apiToken>authClient', 'returns', true]], code: ['fixture', [46, 47, 48, 50]],
+				mem: ['login', 'fxToken'], hl: ['login.json().token', 'fxToken.apiToken'] },
+			{ phase: 'resolve', title: 'authedRequest: a context that sends the token',
+				text: `A new <code>APIRequestContext</code> with <code>extraHTTPHeaders</code>: every request it sends carries <code>Authorization: Bearer &lt;token&gt;</code>. The code after <code>use()</code> is the <b>teardown</b>; it runs later.`,
+				set: { authedRequest: 'running' }, edges: [['apiToken>authedRequest', 'needs']], code: ['fixture', [53, 54, 55, 56, 57, 58]],
+				mem: ['fxAuthed'], hl: ['fxAuthed.authedRequest'] },
+			{ phase: 'resolve', title: 'postsApi and posts are ready',
+				text: `<code>postsApi</code> wraps the signed-in context in a <code>PostsApiClient</code>. <code>posts</code> starts an empty <code>createdIds</code> list to remember every post this test creates. Now the <b>test body</b> starts.`,
+				set: { postsApi: 'running', posts: 'running' }, edges: [['postsApi>authedRequest', 'uses'], ['posts>postsApi', 'needs']],
+				code: ['fixture', [63, 64, 67, 68, 70]], mem: ['fxAll'], hl: ['fxAll.postsApi', 'fxAll.createdIds'] },
+			{ phase: 'http', title: 'POST /api/posts through the client',
+				text: `<code>postsApi.create(input)</code> runs <code>this.request.post('/api/posts', { data })</code>. <code>data</code> is sent as JSON, and <code>authedRequest</code> adds the token. The test never writes a URL or a header.`,
+				set: { postsApi: 'used', authedRequest: 'used', server: 'busy' }, status: { server: 'POST /api/posts' },
+				edges: [['spec>postsApi', 'call'], ['postsApi>authedRequest', 'uses'], ['authedRequest>server', 'request']],
+				code: ['client', [29, 30, 31]], mem: ['fxAll'] },
+			{ phase: 'ok', title: '201 Created: track the id right away',
+				text: `Creating returns <b>201</b> (not 200) and a <code>Location</code> header. The test calls <code>posts.track(id)</code> at once, so the post is cleaned up even if a later step fails.`,
+				set: { server: 'alive' }, status: { server: '201 Created' },
+				edges: [['authedRequest>server', 'returns', true], ['postsApi>authedRequest', 'returns', true], ['spec>postsApi', 'returns', true]],
+				code: ['crud', [14, 15, 16, 18, 19, 21, 23]], mem: ['fxTracked', 'created'], hl: ['fxTracked.createdIds', 'created.status()', 'created.location'] },
+			{ phase: 'http', title: 'GET, PATCH, PUT: the server checks every write',
+				text: `Every write runs the same checks, in this order: <b>401</b> who are you? → <b>404</b> does it exist? → <b>403</b> is it yours? → <b>400</b> is the body valid? Only then does the handler change the post. PATCH sends some fields; PUT must send <b>all</b> of them.`,
+				set: { postsApi: 'used', authedRequest: 'used', server: 'busy' }, status: { server: '200 · 200 · 200' },
+				edges: [['spec>postsApi', 'call'], ['postsApi>authedRequest', 'uses'], ['authedRequest>server', 'request'], ['authedRequest>server', 'returns', true]],
+				code: ['server', [175, 176, 177, 178, 179, 180]], mem: ['fxTracked', 'checks'],
+				hl: ['checks.1. requireUser', 'checks.2. findPost', 'checks.3. requireAuthor', 'checks.4. validatePost'] },
+			{ phase: 'ok', title: 'DELETE: 204, then GET: 404',
+				text: `DELETE answers <b>204 No Content</b>: success with an empty body. A second GET proves the post is really gone: <b>404</b>. Here the 404 is the <b>expected</b> result.`,
+				set: { postsApi: 'used', authedRequest: 'used', server: 'busy' }, status: { server: '204 → then 404' },
+				edges: [['spec>postsApi', 'call'], ['postsApi>authedRequest', 'uses'], ['authedRequest>server', 'request'], ['authedRequest>server', 'returns', true], ['authedRequest>server', 'error', true]],
+				code: ['crud', [45, 46, 47, 48]], mem: ['fxTracked', 'deleted'], hl: ['deleted.status()', 'deleted.GET /api/posts/4'] },
+			{ phase: 'teardown', title: 'Teardown 1: posts deletes what it tracked',
+				text: `The test body is done. Fixtures tear down in <b>reverse order</b>. <code>posts</code> sends DELETE for every tracked id. This post is already gone, so the server answers 404, which the cleanup accepts. This code runs <b>even when the test fails</b>.`,
+				set: { spec: 'used', posts: 'used', postsApi: 'used', authedRequest: 'used', server: 'busy' }, status: { server: 'DELETE /api/posts/4 → 404' },
+				edges: [['posts>postsApi', 'call'], ['postsApi>authedRequest', 'uses'], ['authedRequest>server', 'request'], ['authedRequest>server', 'error', true]],
+				code: ['fixture', [83, 84, 85, 86, 87, 88]], mem: ['teardown'], hl: ['teardown.posts'] },
+			{ phase: 'teardown', title: 'Teardown 2: dispose the context',
+				text: `<code>authedRequest</code> closes the context it created. <code>postsApi</code> and <code>apiToken</code> have nothing to clean. (Playwright disposes the built-in <code>request</code> by itself.)`,
+				set: { posts: 'finished', postsApi: 'finished', authedRequest: 'finished', apiToken: 'finished', authClient: 'finished', server: 'alive' },
+				edges: [], code: ['fixture', [58, 59, 60]], mem: ['teardown'], hl: ['teardown.authedRequest'] },
+			{ phase: 'done', title: 'Passed: the server is back to its seed data',
+				text: `The test created, read, changed and deleted data, and left <b>nothing behind</b>. Every test gets its own token and its own context, so tests can run in parallel without sharing state.`,
+				set: { spec: 'done' }, edges: [], code: ['crud', [10, 14, 26, 32, 38, 45]], mem: [] },
+		] },
+
+	{ id: 'ui', name: 'Flow 3 · API login for UI tests', hint: 'auth.setup.ts · storageState · posts.spec.ts',
+		edges: ['spec>request', 'request>authClient', 'authClient>server', 'request>authFile', 'authFile>browser', 'spec>posts', 'posts>postsApi', 'postsApi>authedRequest',
+			'apiToken>authedRequest', 'apiToken>authClient', 'authedRequest>server', 'spec>postsPage', 'postsPage>browser', 'browser>server'],
+		steps: [
+			{ phase: 'start', title: 'setup runs before the UI projects',
+				text: `The UI projects have <code>dependencies: ['setup']</code>, so Playwright runs <code>auth.setup.ts</code> <b>once, first</b>. If the login is broken, setup fails once and the UI tests are skipped, instead of every test failing at the login.`,
+				set: { ...SERVER_UP, spec: 'used' }, edges: [], code: ['config', [45, 46, 48, 49, 50, 51, 52]], mem: [] },
+			{ phase: 'http', title: 'Log in through the API, not the form',
+				text: `<code>auth.setup.ts</code> wraps the built-in <code>request</code> in an <code>AuthApiClient</code> and logs in as the QA user. One HTTP call, no typing into a form.`,
+				set: { request: 'used', authClient: 'used', server: 'busy' }, status: { server: 'POST /api/login' },
+				edges: [['spec>request', 'call'], ['request>authClient', 'uses'], ['authClient>server', 'request']], code: ['setup', [19, 20, 21]], mem: [] },
+			{ phase: 'ok', title: '200 + Set-Cookie: session=…',
+				text: `The login response also sets a <code>session</code> cookie, the same cookie a browser would get. <code>request</code> keeps cookies like a browser does, so it is now <b>signed in</b>.`,
+				set: { server: 'alive' }, status: { server: '200 OK + cookie' },
+				edges: [['authClient>server', 'returns', true], ['request>authClient', 'returns', true]], code: ['server', [133, 135, 136, 137]],
+				mem: ['cookie'], hl: ['cookie.Set-Cookie'] },
+			{ phase: 'save', title: 'storageState() writes .auth/qa.json',
+				text: `<code>request.storageState({ path })</code> saves the cookies to a file, in the <b>same format a browser context uses</b>. The <code>.auth</code> folder is git-ignored because it holds a live session.`,
+				set: { request: 'used', authFile: 'running' }, edges: [['request>authFile', 'creates']], code: ['setup', [17, 23]],
+				mem: ['cookie', 'storage'], hl: ['storage.cookies'] },
+			{ phase: 'start', title: 'ui-chrome: every test starts signed in',
+				text: `The UI projects set <code>storageState: AUTH_FILE</code>. For <b>each</b> test, Playwright creates a new browser context with that cookie already loaded. The test never sees the login page.`,
+				set: { request: 'finished', authClient: 'finished', browser: 'running' }, status: { browser: 'cookie loaded' },
+				edges: [['authFile>browser', 'arg']], code: ['config', [48, 49, 50, 51, 52, 53]], mem: ['storage', 'browserCtx'], hl: ['browserCtx.cookies'] },
+			{ phase: 'resolve', title: 'The test asks for { posts, postsPage }',
+				text: `<code>ui.fixture.ts</code> adds <code>postsPage</code> to the API fixtures, so one test can use the <b>browser and the API</b>. <code>apiToken</code> logs in through the API again: the <b>browser</b> uses the cookie, the <b>fixtures</b> use a token.`,
+				set: { apiToken: 'alive', authedRequest: 'alive', postsApi: 'alive', posts: 'alive', postsPage: 'running', authClient: 'used' },
+				edges: [['spec>posts', 'needs'], ['spec>postsPage', 'needs'], ['apiToken>authClient', 'call'], ['authClient>server', 'request'],
+					['apiToken>authedRequest', 'needs'], ['postsApi>authedRequest', 'uses'], ['posts>postsApi', 'needs']],
+				code: ['uiSpec', [10]], mem: ['browserCtx', 'uiFx'], hl: ['uiFx.postsPage', 'uiFx.apiToken'] },
+			{ phase: 'http', title: 'Arrange through the API: posts.create()',
+				text: `Seeding with one API call takes milliseconds. Filling in the form would be slow, and a broken form would fail tests that are not about the form.`,
+				set: { authClient: 'finished', posts: 'used', postsApi: 'used', authedRequest: 'used', server: 'busy' }, status: { server: 'POST /api/posts → 201' },
+				edges: [['spec>posts', 'call'], ['posts>postsApi', 'call'], ['postsApi>authedRequest', 'uses'], ['authedRequest>server', 'request'], ['authedRequest>server', 'returns', true]],
+				code: ['uiSpec', [11, 12]], mem: ['browserCtx', 'uiFx'], hl: ['uiFx.createdIds'] },
+			{ phase: 'http', title: 'postsPage.goto(): the browser sends the cookie',
+				text: `The browser opens <code>/posts.html</code>. The page calls <code>/api/me</code> and <code>/api/posts</code> with <code>fetch</code>, and the browser adds the <code>session</code> cookie by itself. The server sees the QA user.`,
+				set: { postsPage: 'used', browser: 'busy', server: 'busy' }, status: { browser: 'goto /posts.html', server: 'GET /api/me · /api/posts' },
+				edges: [['spec>postsPage', 'call'], ['postsPage>browser', 'browser'], ['browser>server', 'request'], ['browser>server', 'returns', true]],
+				code: ['uiSpec', [14, 15]], mem: ['browserCtx', 'uiFx'], hl: ['browserCtx.cookies'] },
+			{ phase: 'assert', title: 'Assert what the user sees',
+				text: `The UI is what this test really checks: the "Signed in as Dev QA" label, and the seeded post with its author and status. The <b>data</b> came from the API; the <b>check</b> happens in the browser.`,
+				set: { postsPage: 'used', browser: 'busy', server: 'alive' }, status: { browser: 'expect' },
+				edges: [['spec>postsPage', 'call'], ['postsPage>browser', 'browser']], code: ['uiSpec', [16, 17, 18]], mem: ['browserCtx', 'uiFx'] },
+			{ phase: 'teardown', title: 'Teardown: the API deletes the seeded post',
+				text: `Same fixture as flow 2: after the test, <code>posts</code> deletes the post through the API (<b>204</b>) and the context is disposed. Playwright closes the browser context.`,
+				set: { posts: 'used', postsApi: 'used', authedRequest: 'used', server: 'busy' }, status: { server: 'DELETE /api/posts/5 → 204' },
+				edges: [['posts>postsApi', 'call'], ['postsApi>authedRequest', 'uses'], ['authedRequest>server', 'request'], ['authedRequest>server', 'returns', true]],
+				code: ['fixture', [83, 84, 85, 86, 87, 88]], mem: ['uiFx'], hl: ['uiFx.createdIds'] },
+			{ phase: 'done', title: 'Passed: log in once, seed and clean through the API',
+				text: `<b>The pattern:</b> log in through the API once (the setup project), reuse the saved session in every UI test, prepare data through the API, and use the browser only for what the test is about. Faster and less flaky than doing everything through the UI.`,
+				set: { spec: 'done', posts: 'finished', postsApi: 'finished', authedRequest: 'finished', apiToken: 'finished', postsPage: 'finished', browser: 'finished', server: 'alive' },
+				edges: [], code: ['uiSpec', [10, 12, 15, 16, 17, 18, 19]], mem: [] },
+		] },
+];
+
+const STATUS = {
+	idle: '', unused: 'not used', running: 'setting up…', used: 'in use', busy: 'working', alive: 'ready',
+	finished: '✓ done', error: 'error', done: '✓ passed',
+};
+
+
+// ===================================================================================
+// 5. RENDERING
+// ===================================================================================
+const $ = (id) => document.getElementById(id);
+const svgNS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, parent) => {
+	const node = document.createElementNS(svgNS, tag);
+	for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+	if (parent) parent.appendChild(node);
+	return node;
+};
+const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const nodeH = (n) => n.h ?? H;
+
+// Left-to-right curve. Tall nodes (spec, server) connect at the other node's height.
+function edgePath(fromId, toId) {
+	const a = NODES[fromId], b = NODES[toId];
+	const x1 = a.x + a.w / 2, x2 = b.x - b.w / 2 - 4;
+	const y1 = fromId === 'spec' ? b.y : a.y;
+	const y2 = toId === 'server' ? a.y : b.y;
+	const mx = (x1 + x2) / 2;
+	return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+}
+
+const EDGE_D = {};
+function drawGraph() {
+	for (const [from, to, kind, d] of EDGES) {
+		const id = `${from}>${to}`;
+		// An optional 4th value is a custom SVG path, for edges that don't run left to right.
+		EDGE_D[id] = d ?? edgePath(from, to);
+		el('path', { d: EDGE_D[id], class: `edge ${kind}`, id: `e-${id}`, 'marker-end': 'url(#arrow)' }, $('edges'));
+	}
+	for (const [id, n] of Object.entries(NODES)) {
+		const h = nodeH(n);
+		const g = el('g', { class: `node k-${n.kind} s-idle`, id: `n-${id}`, transform: `translate(${n.x},${n.y})` }, $('nodes'));
+		el('rect', { x: -n.w / 2, y: -h / 2, width: n.w, height: h, rx: 12 }, g);
+		if (n.badge) el('text', { class: 'badge', y: -h / 2 - 6 }, g).textContent = n.badge;
+		const ty = n.h ? -8 : -4;
+		el('text', { class: 'title', y: ty }, g).textContent = n.label;
+		el('text', { class: 'sub', y: ty + 17 }, g).textContent = n.sub;
+		el('text', { class: 'status', y: h / 2 + 15 }, g);
+	}
+}
+
+function highlight(line) {
+	const re = /(\/\/.*$)|('(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|"(?:[^"\\]|\\.)*")|\b(await|async|const|let|export|import|from|new|return|function|class|constructor|private|readonly|this|for|of|type|test|expect)\b/g;
+	let out = '', last = 0, m;
+	while ((m = re.exec(line))) {
+		out += escapeHtml(line.slice(last, m.index));
+		const cls = m[1] ? 'tok-c' : m[2] ? 'tok-s' : 'tok-k';
+		out += `<span class="${cls}">${escapeHtml(m[0])}</span>`;
+		last = re.lastIndex;
+	}
+	return out + escapeHtml(line.slice(last));
+}
+
+function renderCode([key, hl], err = []) {
+	const snip = CODE[key];
+	const rows = snip.numbered ?? snip.lines.map((t, i) => [snip.start + i, t]);
+	const parts = snip.file.split('/');
+	$('file').innerHTML = parts.length > 1
+		? `${escapeHtml(parts.slice(0, -1).join('/'))}/<b>${escapeHtml(parts.at(-1))}</b>` : `<b>${escapeHtml(snip.file)}</b>`;
+	$('code').innerHTML = rows.map(([n, t]) =>
+		`<span class="l${hl.includes(n) ? ' hl' : ''}${err.includes(n) ? ' err' : ''}"><span class="n">${n}</span>${highlight(t)}</span>`).join('');
+	// Scroll inside the code box only; scrollIntoView would also scroll the whole page.
+	const first = $('code').querySelector('.hl, .err');
+	if (first) $('code').scrollTop = Math.max(0, first.offsetTop - 40);
+}
+
+function renderMemory(mem, hl, prevMem) {
+	if (!mem.length) { $('memory').innerHTML = `<span class="empty">${MEMORY_EMPTY}</span>`; return; }
+	$('memory').innerHTML = mem.map((id) => {
+		const s = SCOPES[id];
+		const on = (name) => (hl.includes(`${id}.${name}`) ? ' hl' : '');
+		const vars = s.vars.map(([name, desc]) =>
+			`<span class="v${on(name)}">${name}</span><span class="d${on(name)}${s.override?.includes(name) ? ' ovr' : ''}">${escapeHtml(desc)}</span>`).join('');
+		const pub = s.returns
+			? `<div class="pub">${s.pubLabel ?? 'public (returned):'} ${s.returns.map((r) => `<span class="pill${on(r)}">${r}</span>`).join('')}</div>` : '';
+		const label = s.label ?? 'fields';
+		return `<div class="scope k-${s.kind}${prevMem.includes(id) ? ' kept' : ''}"><div class="scope-h">${escapeHtml(s.title)}<small>${s.note} · ${label}</small></div><div class="vars">${vars}</div>${pub}</div>`;
+	}).join('');
+}
+
+// ===================================================================================
+// 6. STATE MACHINE: replay steps 0..i so "back" and jumping always produce the right state
+// ===================================================================================
+let flow = FLOWS[0], index = 0, playing = false, timer = null, prevMem = [];
+const speed = () => Number($('speed').value);
+
+function stateAt(i) {
+	const nodes = Object.fromEntries(Object.keys(NODES).map((k) => [k, 'idle']));
+	let mem = [];
+	for (let s = 0; s <= i; s++) {
+		for (const k in nodes) {
+			if (nodes[k] === 'running') nodes[k] = FINISHING.includes(NODES[k].kind) ? 'finished' : 'alive';
+			if ((nodes[k] === 'used' || nodes[k] === 'busy') && k !== 'spec') nodes[k] = 'alive';
+		}
+		Object.assign(nodes, flow.steps[s].set);
+		if (flow.steps[s].mem) mem = flow.steps[s].mem;
+	}
+	return { nodes, mem };
+}
+
+let animToken = 0;
+function animateEdges(specs) {
+	const g = $('anims');
+	g.innerHTML = '';
+	const token = ++animToken;
+	const dur = 900 / speed();
+	specs.forEach(([edgeId, kind, reverse = false, temp = false], i) => {
+		const path = el('path', { d: temp ? TEMP[edgeId] : EDGE_D[edgeId], class: `anim ${kind}` }, g);
+		const len = path.getTotalLength();
+		path.style.strokeDasharray = `${len} ${len}`;
+		path.style.strokeDashoffset = len;
+		path.style.opacity = 0;
+		const dot = el('circle', { r: 6, class: `dot anim ${kind}`, fill: 'currentColor', opacity: 0 }, g);
+		const start = performance.now() + i * dur * 0.55;
+		const tick = (now) => {
+			if (token !== animToken) return;
+			const t = Math.min(1, Math.max(0, (now - start) / dur));
+			if (now >= start) {
+				const eased = 1 - Math.pow(1 - t, 3);
+				path.style.opacity = 1;
+				path.style.strokeDashoffset = len * (1 - eased);
+				const p = path.getPointAtLength(reverse ? len * (1 - eased) : len * eased);
+				dot.setAttribute('opacity', t < 1 ? 1 : 0);
+				dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
+			}
+			if (t < 1) requestAnimationFrame(tick);
+		};
+		requestAnimationFrame(tick);
+	});
+	return specs.length ? dur * (1 + 0.55 * (specs.length - 1)) : 0;
+}
+
+function render() {
+	const step = flow.steps[index];
+	const { nodes, mem } = stateAt(index);
+
+	for (const [id, state] of Object.entries(nodes)) {
+		const g = $(`n-${id}`);
+		g.setAttribute('class', `node k-${NODES[id].kind} s-${state}`);
+		g.querySelector('.status').textContent = step.status?.[id] ?? STATUS[state] ?? '';
+	}
+	for (const [from, to] of EDGES) {
+		const id = `${from}>${to}`;
+		$(`e-${id}`).classList.toggle('in-flow', flow.edges.includes(id));
+	}
+
+	const [phaseName, phaseColor] = PHASES[step.phase];
+	$('now').innerHTML = `<h2>What happens now</h2><span class="phase" style="background:${phaseColor}">${phaseName}</span>
+		<div class="text"><h3>${index + 1}. ${step.title}</h3><p>${step.text}</p></div>`;
+	renderCode(step.code, step.err);
+	renderMemory(mem, step.hl ?? [], prevMem);
+	prevMem = mem;
+
+	$('counter').textContent = `${index + 1} / ${flow.steps.length}`;
+	[...$('progress').children].forEach((d, i) => d.className = i < index ? 'past' : i === index ? 'current' : '');
+	[...$('timeline').children].forEach((li, i) => li.className = i < index ? 'past' : i === index ? 'current' : '');
+	const li = $('timeline').children[index];
+	$('timeline').scrollTop = Math.max(0, li.offsetTop - $('timeline').clientHeight / 2);
+
+	return animateEdges(step.edges);
+}
+
+function buildFlowUi() {
+	$('progress').innerHTML = flow.steps.map((s) => `<div style="background:${PHASES[s.phase][1]}" title="${PHASES[s.phase][0]}"></div>`).join('');
+	[...$('progress').children].forEach((d, i) => d.onclick = () => go(i));
+	$('timeline').innerHTML = flow.steps.map((s, i) =>
+		`<li><span class="num">${i + 1}</span><span class="pd" style="background:${PHASES[s.phase][1]}"></span><span>${escapeHtml(s.title)}</span></li>`).join('');
+	[...$('timeline').children].forEach((li, i) => li.onclick = () => go(i));
+	document.querySelectorAll('.flow-btn').forEach((b) => b.classList.toggle('active', b.dataset.id === flow.id));
+}
+
+function selectFlow(i) { stop(); flow = FLOWS[i]; index = 0; prevMem = []; buildFlowUi(); render(); }
+function go(i) { stop(); index = Math.max(0, Math.min(flow.steps.length - 1, i)); render(); }
+
+function schedule(animTime) {
+	clearTimeout(timer);
+	if (!playing) return;
+	timer = setTimeout(() => {
+		if (index >= flow.steps.length - 1) return stop();
+		index++;
+		schedule(render());
+	}, Math.max(animTime + 900 / speed(), 2800 / speed()));
+}
+function play() {
+	if (index >= flow.steps.length - 1) { index = 0; prevMem = []; }
+	playing = true; $('play').textContent = '⏸ Pause';
+	schedule(render());
+}
+function stop() { playing = false; clearTimeout(timer); $('play').textContent = '▶ Play'; }
+
+// ===================================================================================
+// 7. WIRING
+// ===================================================================================
+$('flows').innerHTML = FLOWS.map((f, i) => `<button class="flow-btn" data-id="${f.id}" data-i="${i}">${f.name}<small>${f.hint}</small></button>`).join('');
+document.querySelectorAll('.flow-btn').forEach((b) => b.onclick = () => selectFlow(Number(b.dataset.i)));
+$('play').onclick = () => (playing ? stop() : play());
+$('next').onclick = () => go(index + 1);
+$('prev').onclick = () => go(index - 1);
+$('reset').onclick = () => { prevMem = []; go(0); };
+document.addEventListener('keydown', (e) => {
+	if (e.target.tagName === 'SELECT') return;
+	// Let Space/Enter toggle the focused intro panel instead of starting the animation.
+	if (e.target.tagName === 'SUMMARY' && (e.key === ' ' || e.key === 'Enter')) return;
+	if (e.key === 'i' || e.key === 'I') { $('intro').open = !$('intro').open; return; }
+	if (e.key === 'a' || e.key === 'A') { $('apidocs').open = !$('apidocs').open; if ($('apidocs').open) $('apidocs').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+	if (e.key === 'ArrowRight') go(index + 1);
+	else if (e.key === 'ArrowLeft') go(index - 1);
+	else if (e.key === 'Home') { prevMem = []; go(0); }
+	else if (e.key === ' ') { e.preventDefault(); playing ? stop() : play(); }
+	else if (['1', '2', '3'].includes(e.key)) selectFlow(Number(e.key) - 1);
+});
+
+drawGraph();
+selectFlow(0);
+</script>
+</body>
+</html>

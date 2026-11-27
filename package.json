@@ -4,5 +4,13 @@
     "@types/node": "^26.6.6",
     "typescript": "^7.0.2"
   },
-  "scripts": {}
+  "scripts": {
+    "test:pom-login": "playwright test lectures/03-pom/tests/login.spec.ts --headed",
+    "test": "playwright test",
+    "test:chrome": "playwright test --project=chrome",
+    "test:firefox": "playwright test --project=firefox",
+    "test:workshop": "playwright test lectures/04-workshop",
+    "test:api": "playwright test -c lectures/05-api-testing",
+    "start:api": "node lectures/05-api-testing/server/server.mjs"
+  }
 }

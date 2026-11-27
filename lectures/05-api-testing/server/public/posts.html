@@ -1,0 +1,129 @@
+<!doctype html>
+<!-- DEVELOPMENT: Posts page used to explore the local Team Blog app and UI tests. -->
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<title>Team Blog - Posts</title>
+	<style>
+		body { font-family: system-ui, sans-serif; background: #f4f6fb; margin: 0; color: #1d2433; }
+		header { background: #3b5bdb; color: #fff; padding: 0.8rem 1.5rem; display: flex; justify-content: space-between; align-items: center; }
+		header h1 { margin: 0; font-size: 1.3rem; }
+		header button { background: #fff; color: #3b5bdb; border: 0; border-radius: 6px; padding: 0.4rem 0.8rem; cursor: pointer; }
+		main { max-width: 720px; margin: 1.5rem auto; display: grid; gap: 1.5rem; padding: 0 1rem; }
+		section { background: #fff; border-radius: 12px; padding: 1.25rem; box-shadow: 0 4px 20px #0001; }
+		h2 { margin-top: 0; font-size: 1.1rem; }
+		form { display: grid; gap: 0.6rem; }
+		label { display: grid; gap: 0.25rem; font-weight: 600; font-size: 0.9rem; }
+		label.inline { display: flex; align-items: center; gap: 0.4rem; }
+		input[type="text"], textarea { padding: 0.5rem; border: 1px solid #c6cbd6; border-radius: 6px; font: inherit; }
+		form button { justify-self: start; padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: #3b5bdb; color: #fff; cursor: pointer; }
+		[role="status"] { margin: 0; min-height: 1.2em; color: #2b8a3e; }
+		[role="status"].error { color: #c92a2a; }
+		ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+		li { border: 1px solid #e3e6ee; border-radius: 8px; padding: 0.6rem 0.8rem; display: flex; justify-content: space-between; gap: 1rem; }
+		li .meta { color: #555; font-size: 0.85rem; }
+		.badge { font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 999px; align-self: center; }
+		.badge.published { background: #d3f9d8; color: #2b8a3e; }
+		.badge.draft { background: #fff3bf; color: #8a6d00; }
+	</style>
+</head>
+<body>
+	<header>
+		<h1>Team Blog</h1>
+		<div>
+			<span id="whoami"></span>
+			<button id="logout" type="button">Sign out</button>
+		</div>
+	</header>
+
+	<main>
+		<section>
+			<h2>New post</h2>
+			<form id="new-post">
+				<label>Title <input name="title" type="text" /></label>
+				<label>Body <textarea name="body" rows="3"></textarea></label>
+				<label class="inline"><input name="published" type="checkbox" /> Published</label>
+				<button type="submit">Create post</button>
+				<p role="status" id="status"></p>
+			</form>
+		</section>
+
+		<section>
+			<h2>All posts</h2>
+			<ul aria-label="Posts" id="posts"></ul>
+		</section>
+	</main>
+
+	<script>
+		const $ = (id) => document.getElementById(id);
+
+		async function loadPosts() {
+			const [posts, users] = await Promise.all([
+				fetch('/api/posts').then((r) => r.json()),
+				fetch('/api/users').then((r) => r.json()),
+			]);
+			const authorName = (id) => users.find((u) => u.id === id)?.name ?? 'Unknown';
+			$('posts').replaceChildren(
+				...posts.map((post) => {
+					const li = document.createElement('li');
+					const text = document.createElement('div');
+					const title = document.createElement('strong');
+					title.textContent = post.title;
+					const meta = document.createElement('div');
+					meta.className = 'meta';
+					meta.textContent = `by ${authorName(post.authorId)}`;
+					text.append(title, meta);
+					const badge = document.createElement('span');
+					badge.className = `badge ${post.published ? 'published' : 'draft'}`;
+					badge.textContent = post.published ? 'Published' : 'Draft';
+					li.append(text, badge);
+					return li;
+				}),
+			);
+		}
+
+		async function start() {
+			const me = await fetch('/api/me');
+			if (me.status === 401) {
+				location.href = '/login.html';
+				return;
+			}
+			const user = await me.json();
+			$('whoami').textContent = `Signed in as ${user.name}`;
+			await loadPosts();
+		}
+
+		$('new-post').addEventListener('submit', async (event) => {
+			event.preventDefault();
+			const form = event.target;
+			const response = await fetch('/api/posts', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					title: form.title.value,
+					body: form.body.value,
+					published: form.published.checked,
+				}),
+			});
+			const result = await response.json();
+			const status = $('status');
+			if (response.ok) {
+				status.className = '';
+				status.textContent = `Post "${result.title}" created`;
+				form.reset();
+				await loadPosts();
+			} else {
+				status.className = 'error';
+				status.textContent = result.details?.join(', ') ?? result.error;
+			}
+		});
+
+		$('logout').addEventListener('click', async () => {
+			await fetch('/api/logout', { method: 'POST' });
+			location.href = '/login.html';
+		});
+
+		start();
+	</script>
+</body>
+</html>

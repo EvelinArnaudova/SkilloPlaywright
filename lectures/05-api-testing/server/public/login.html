@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- DEVELOPMENT: Sign-in page for manually exploring the local Team Blog app. -->
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<title>Team Blog - Sign in</title>
+	<style>
+		body { font-family: system-ui, sans-serif; background: #f4f6fb; margin: 0; display: grid; place-items: center; min-height: 100vh; }
+		form { background: #fff; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px #0001; width: 320px; display: grid; gap: 0.75rem; }
+		h1 { margin: 0 0 0.5rem; font-size: 1.4rem; }
+		label { display: grid; gap: 0.25rem; font-weight: 600; font-size: 0.9rem; }
+		input { padding: 0.55rem; border: 1px solid #c6cbd6; border-radius: 6px; font-size: 1rem; }
+		button { padding: 0.6rem; border: 0; border-radius: 6px; background: #3b5bdb; color: #fff; font-size: 1rem; cursor: pointer; }
+		[role="alert"] { color: #c92a2a; min-height: 1.2em; margin: 0; }
+		.hint { color: #555; font-size: 0.8rem; margin: 0; }
+	</style>
+</head>
+<body>
+	<form id="login-form">
+		<h1>Team Blog</h1>
+		<label>Email <input name="email" type="email" autocomplete="username" required /></label>
+		<label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+		<button type="submit">Sign in</button>
+		<p role="alert" id="error"></p>
+		<p class="hint">Demo: dev@example.com / secret123</p>
+	</form>
+
+	<script>
+		const form = document.getElementById('login-form');
+		form.addEventListener('submit', async (event) => {
+			event.preventDefault();
+			const data = Object.fromEntries(new FormData(form));
+			const response = await fetch('/api/login', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(data),
+			});
+			if (response.ok) {
+				location.href = '/posts.html';
+			} else {
+				const { error } = await response.json();
+				document.getElementById('error').textContent = error;
+			}
+		});
+	</script>
+</body>
+</html>
